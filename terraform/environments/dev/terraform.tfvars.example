@@ -1,0 +1,17 @@
+# Swiss OTC Credentials (AK/SK)
+access_key   = ""
+secret_key   = ""
+project_id   = ""
+domain_name  = ""  # e.g. OTC00000000001000000xxx
+project_name = ""  # e.g. eu-ch2_myproject
+
+# Cluster
+cluster_name   = "rke2-dev"
+ssh_public_key = "ssh-ed25519 AAAA..."
+rke2_token     = ""  # Generate: openssl rand -hex 32
+
+# CI/CD Runner (optional — set one or both)
+# github_runner_token = ""  # Auto-generated in pipeline
+# ghcr_pull_token     = ""
+# gitlab_url          = "https://gitlab.com"
+# gitlab_runner_token = ""

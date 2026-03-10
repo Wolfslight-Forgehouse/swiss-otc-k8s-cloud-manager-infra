@@ -1,0 +1,50 @@
+name: "CCM Deploy (Helm)"
+on:
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Dry run (true/false)"
+        required: false
+        default: "true"
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    name: "Deploy CCM"
+    runs-on: [self-hosted, otc]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: azure/setup-helm@v4
+        with:
+          version: v3.14.0
+
+      - name: Verify cluster access
+        run: |
+          echo "Using local kubeconfig (set by post-apply)..."
+          export KUBECONFIG="/home/$(whoami)/.kube/config"
+          kubectl get nodes
+          kubectl get secrets -n kube-system | grep -E "swiss-otc|ghcr" || echo "Warning: CCM secrets not found — run post-apply first"
+
+      - name: Deploy CCM
+        run: |
+          export KUBECONFIG="/home/$(whoami)/.kube/config"
+          DRY_RUN="${{ github.event.inputs.dry_run }}"
+
+          HELM_ARGS="--namespace kube-system \
+            --set existingSecret=swiss-otc-cloud-config \
+            --set image.pullPolicy=Always \
+            --set imagePullSecrets[0].name=ghcr-pull-secret"
+
+          if [ "${DRY_RUN}" = "true" ]; then
+            echo "=== DRY RUN ==="
+            helm upgrade --install swiss-otc-ccm deploy/helm/swiss-otc-ccm ${HELM_ARGS} --dry-run
+          else
+            echo "=== DEPLOYING ==="
+            helm upgrade --install swiss-otc-ccm deploy/helm/swiss-otc-ccm ${HELM_ARGS} --wait --timeout 120s
+            echo ""
+            echo "=== CCM Status ==="
+            kubectl get pods -n kube-system -l app.kubernetes.io/name=swiss-otc-ccm
+          fi

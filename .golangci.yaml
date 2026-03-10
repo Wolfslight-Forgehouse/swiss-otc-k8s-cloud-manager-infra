@@ -1,0 +1,25 @@
+version: "2"
+
+run:
+  timeout: 5m
+
+linters:
+  default: none
+  enable:
+    - asciicheck
+    - errcheck
+    - ineffassign
+    - misspell
+    - unused
+    - unconvert
+    - whitespace
+  settings:
+    staticcheck:
+      checks:
+        - all
+        - '-SA1008' # "content-length" is not canonical
+        - '-SA1019' # deprecations, deprecation warnings
+
+formatters:
+  enable:
+    - gofmt

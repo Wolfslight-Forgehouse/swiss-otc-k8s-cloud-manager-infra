@@ -1,0 +1,15 @@
+terraform {
+  backend "s3" {
+    # Replace with your OBS bucket name for Terraform state
+    bucket   = "YOUR_TFSTATE_BUCKET"
+    key      = "rke2/terraform.tfstate"
+    region   = "eu-ch2"
+    endpoint = "https://obs.eu-ch2.sc.otc.t-systems.com"
+
+    skip_credentials_validation = true
+    skip_metadata_api_check     = true
+    skip_region_validation      = true
+    skip_requesting_account_id  = true
+    skip_s3_checksum            = true
+  }
+}

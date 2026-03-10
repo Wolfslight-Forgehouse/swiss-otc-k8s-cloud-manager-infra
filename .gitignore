@@ -1,0 +1,124 @@
+# =============================================================================
+# Swiss OTC Cloud Controller Manager - .gitignore
+# Security-first: block credentials, state files, and sensitive artifacts
+# =============================================================================
+
+# ---------------------
+# Terraform / OpenTofu
+# ---------------------
+*.tfstate
+*.tfstate.*
+*.tfstate.backup
+*.tfvars
+*.tfvars.json
+.terraform/
+.terraform.lock.hcl
+crash.log
+crash.*.log
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+.terraformrc
+terraform.rc
+
+# ---------------------
+# Credentials & Secrets
+# ---------------------
+*.pem
+*.key
+*.crt
+*.p12
+*.pfx
+*.jks
+*.keystore
+cloud.conf
+clouds.yaml
+clouds-public.yaml
+secure.yaml
+.env
+.env.*
+!.env.example
+*.secret
+*-secret.yaml
+!**/templates/*-secret.yaml
+kubeconfig
+kubeconfig.*
+.kubeconfig
+**/kubeadm-config.yaml
+
+# ---------------------
+# Go
+# ---------------------
+*.test
+*.out
+*.prof
+*.cov
+coverage.html
+/bin/
+/output*/
+/_output*/
+/_dist
+/_gopath/
+.go/
+go.work
+vendor/
+
+# ---------------------
+# Kubernetes / Helm
+# ---------------------
+*.decoded
+values-local.yaml
+values-secret.yaml
+charts/*.tgz
+
+# ---------------------
+# IDE & Editor
+# ---------------------
+.idea/
+.vscode/
+*.iml
+*.swp
+*.swo
+*~
+\#*\#
+.\#*
+[._]*.s[a-w][a-z]
+[._]s[a-w][a-z]
+*.un~
+Session.vim
+.netrwhist
+*.sublime-project
+*.sublime-workspace
+.tags*
+
+# ---------------------
+# OS
+# ---------------------
+.DS_Store
+._*
+Thumbs.db
+Desktop.ini
+
+# ---------------------
+# Build & CI
+# ---------------------
+/_tmp/
+/_artifacts/
+/.make/
+/junit*.xml
+dist/
+
+# ---------------------
+# Misc
+# ---------------------
+*.log
+.envrc
+cscope.*
+.classpath
+.project
+.settings/
+**/.hg
+**/.hg*
+zz_generated.openapi.go
+swiss-otc-cloud-controller-manager
