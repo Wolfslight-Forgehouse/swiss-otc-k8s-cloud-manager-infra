@@ -1,0 +1,47 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: swiss-otc-cloud-controller-manager
+  namespace: kube-system
+  labels:
+    k8s-app: swiss-otc-cloud-controller-manager
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      k8s-app: swiss-otc-cloud-controller-manager
+  template:
+    metadata:
+      labels:
+        k8s-app: swiss-otc-cloud-controller-manager
+    spec:
+      serviceAccountName: cloud-controller-manager
+      containers:
+      - name: swiss-otc-cloud-controller-manager
+        image: swiss-otc/cloud-controller-manager:latest
+        command:
+        - /usr/local/bin/swiss-otc-cloud-controller-manager
+        - --cloud-provider=opentelekomcloud
+        - --cloud-config=/etc/kubernetes/cloud-config.yaml
+        - --use-service-account-credentials=true
+        - --leader-elect=true
+        - --bind-address=127.0.0.1
+        volumeMounts:
+        - name: cloud-config
+          mountPath: /etc/kubernetes
+          readOnly: true
+        env:
+        - name: KUBERNETES_SERVICE_HOST
+          value: "127.0.0.1"
+      tolerations:
+      - key: node.cloudprovider.kubernetes.io/uninitialized
+        value: "true"
+        effect: NoSchedule
+      - key: node-role.kubernetes.io/master
+        effect: NoSchedule
+      - key: node-role.kubernetes.io/control-plane  
+        effect: NoSchedule
+      volumes:
+      - name: cloud-config
+        secret:
+          secretName: swiss-otc-cloud-config

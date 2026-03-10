@@ -1,0 +1,131 @@
+name: "Terraform Apply"
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: "Type APPLY to confirm"
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  apply:
+    name: "Terraform Apply"
+    runs-on: ubuntu-latest
+    environment: production
+    if: github.event.inputs.confirm == 'APPLY'
+    env:
+      AWS_ACCESS_KEY_ID: ${{ secrets.OTC_ACCESS_KEY }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.OTC_SECRET_KEY }}
+      TF_VAR_access_key: ${{ secrets.OTC_ACCESS_KEY }}
+      TF_VAR_secret_key: ${{ secrets.OTC_SECRET_KEY }}
+      TF_VAR_project_id: ${{ secrets.OTC_PROJECT_ID }}
+      TF_VAR_ssh_public_key: ${{ secrets.SSH_PUBLIC_KEY }}
+      TF_VAR_ssh_private_key: ${{ secrets.SSH_PRIVATE_KEY }}
+      TF_VAR_rke2_token: ${{ secrets.RKE2_TOKEN }}
+      TF_VAR_ghcr_pull_token: ${{ secrets.GHCR_PULL_TOKEN }}
+    defaults:
+      run:
+        working-directory: terraform/environments/dev
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.7"
+          terraform_wrapper: false
+
+      # Generate fresh runner token for bastion bootstrap
+      - name: Generate Runner Token
+        id: runner-token
+        env:
+          GH_PAT: ${{ secrets.GH_PAT }}
+        run: |
+          TOKEN=$(curl -s -X POST \
+            -H "Authorization: token ${GH_PAT}" \
+            "https://api.github.com/repos/${{ github.repository }}/actions/runners/registration-token" \
+            | jq -r '.token')
+          echo "token=${TOKEN}" >> $GITHUB_OUTPUT
+
+      - name: Terraform Init
+        run: terraform init
+
+      - name: Terraform Plan
+        run: terraform plan -no-color
+        env:
+          TF_VAR_github_runner_token: ${{ steps.runner-token.outputs.token }}
+
+      - name: Terraform Apply
+        id: tf-apply
+        run: |
+          terraform apply -auto-approve
+          # Export outputs for post-apply
+          echo "master_ip=$(terraform output -raw master_ip)" >> $GITHUB_OUTPUT
+          echo "bastion_ip=$(terraform output -raw bastion_ip)" >> $GITHUB_OUTPUT
+          echo "vpc_id=$(terraform output -raw vpc_id)" >> $GITHUB_OUTPUT
+          echo "subnet_id=$(terraform output -raw subnet_id)" >> $GITHUB_OUTPUT
+          echo "subnet_network_id=$(terraform output -raw subnet_network_id)" >> $GITHUB_OUTPUT
+          echo "security_group_id=$(terraform output -raw security_group_id)" >> $GITHUB_OUTPUT
+        env:
+          TF_VAR_github_runner_token: ${{ steps.runner-token.outputs.token }}
+
+    outputs:
+      master_ip: ${{ steps.tf-apply.outputs.master_ip }}
+      bastion_ip: ${{ steps.tf-apply.outputs.bastion_ip }}
+      vpc_id: ${{ steps.tf-apply.outputs.vpc_id }}
+      subnet_id: ${{ steps.tf-apply.outputs.subnet_id }}
+      subnet_network_id: ${{ steps.tf-apply.outputs.subnet_network_id }}
+      security_group_id: ${{ steps.tf-apply.outputs.security_group_id }}
+
+  post-apply:
+    name: "Post-Apply Configuration"
+    needs: apply
+    runs-on: [self-hosted, otc]
+    if: success()
+    env:
+      MASTER_IP: ${{ needs.apply.outputs.master_ip }}
+      GH_TOKEN: ${{ secrets.GH_PAT }}
+      GH_REPO: ${{ github.repository }}
+      GHCR_PULL_USER: ${{ vars.GHCR_USER || 'github-user' }}
+      GHCR_PULL_TOKEN: ${{ secrets.GHCR_PULL_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Generate cloud.conf
+        env:
+          OTC_AK: ${{ secrets.OTC_ACCESS_KEY }}
+          OTC_SK: ${{ secrets.OTC_SECRET_KEY }}
+          OTC_PROJECT_ID: ${{ secrets.OTC_PROJECT_ID }}
+          VPC_ID: ${{ needs.apply.outputs.vpc_id }}
+          SUBNET_ID: ${{ needs.apply.outputs.subnet_network_id }}
+          NETWORK_ID: ${{ needs.apply.outputs.subnet_id }}
+        run: |
+          cat > /tmp/cloud.conf << CLOUDEOF
+          auth:
+            access_key: "${OTC_AK}"
+            secret_key: "${OTC_SK}"
+            project_id: "${OTC_PROJECT_ID}"
+            project_name: "${OTC_PROJECT_NAME}"
+            user_domain_name: "${OTC_DOMAIN_NAME}"
+          region: "eu-ch2"
+          network:
+            vpc_id: "${VPC_ID}"
+            subnet_id: "${SUBNET_ID}"
+            network_id: "${NETWORK_ID}"
+          loadbalancer:
+            availability_zones:
+              - "eu-ch2a"
+          CLOUDEOF
+          # Remove leading whitespace from heredoc
+          sed -i 's/^          //' /tmp/cloud.conf
+          export CLOUD_CONFIG="$(cat /tmp/cloud.conf)"
+          echo "CLOUD_CONFIG<<CONFEOF" >> $GITHUB_ENV
+          cat /tmp/cloud.conf >> $GITHUB_ENV
+          echo "CONFEOF" >> $GITHUB_ENV
+
+      - name: Run post-apply
+        run: |
+          chmod +x scripts/post-apply.sh
+          scripts/post-apply.sh

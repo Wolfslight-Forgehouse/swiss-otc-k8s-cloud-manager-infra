@@ -1,0 +1,176 @@
+name: "Demo App Deploy"
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: "Action: deploy / destroy / dry-run"
+        required: true
+        default: "dry-run"
+        type: choice
+        options:
+          - dry-run
+          - deploy
+          - destroy
+      eip_bandwidth:
+        description: "EIP bandwidth in Mbit/s (0 = no public IP)"
+        required: false
+        default: "10"
+
+permissions:
+  contents: read
+
+jobs:
+  demo:
+    name: "Demo App"
+    runs-on: [self-hosted, otc]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Verify cluster access
+        run: |
+          export KUBECONFIG="/home/$(whoami)/.kube/config"
+          echo "=== Cluster Nodes ==="
+          kubectl get nodes -o wide
+
+      - name: Deploy / Destroy Demo App
+        run: |
+          export KUBECONFIG="/home/$(whoami)/.kube/config"
+          ACTION="${{ github.event.inputs.action }}"
+          BANDWIDTH="${{ github.event.inputs.eip_bandwidth }}"
+
+          # Generate demo manifest
+          cat > /tmp/demo-app.yaml << 'MANIFEST'
+          apiVersion: apps/v1
+          kind: Deployment
+          metadata:
+            name: cyberpunk-demo
+            namespace: default
+            labels:
+              app: cyberpunk-demo
+          spec:
+            replicas: 2
+            selector:
+              matchLabels:
+                app: cyberpunk-demo
+            template:
+              metadata:
+                labels:
+                  app: cyberpunk-demo
+              spec:
+                containers:
+                - name: nginx
+                  image: nginx:alpine
+                  ports:
+                  - containerPort: 80
+                  command: ["/bin/sh", "-c"]
+                  args:
+                  - |
+                    cat > /usr/share/nginx/html/index.html << 'HTMLEOF'
+                    <!DOCTYPE html><html><head><meta charset="UTF-8"><title>Swiss OTC CCM</title>
+                    <style>
+                    *{margin:0;padding:0;box-sizing:border-box}
+                    body{background:#0a0a0f;color:#00ff41;font-family:"Courier New",monospace;overflow:hidden;height:100vh}
+                    .c{display:flex;flex-direction:column;align-items:center;justify-content:center;height:100vh;position:relative;z-index:2}
+                    h1{font-size:2.5em;text-shadow:0 0 20px #00ff41,0 0 40px #00ff41;margin-bottom:20px;text-align:center}
+                    .sub{color:#0abdc6;font-size:1.2em;margin-bottom:30px;text-shadow:0 0 10px #0abdc6}
+                    .g{display:grid;grid-template-columns:repeat(3,1fr);gap:15px;max-width:600px;margin:20px}
+                    .d{background:rgba(0,255,65,0.05);border:1px solid #00ff41;padding:15px;text-align:center;border-radius:4px}
+                    .d h3{color:#0abdc6;margin-bottom:5px;font-size:0.9em}.d p{color:#00ff41;font-size:1.1em}
+                    .st{color:#ff6b35;font-size:0.9em;margin-top:30px}
+                    .cl{font-size:1.5em;color:#ff2a6d;margin-bottom:20px}
+                    canvas{position:fixed;top:0;left:0;z-index:1}
+                    .sl{position:fixed;top:0;left:0;width:100%;height:100%;background:repeating-linear-gradient(0deg,transparent,transparent 2px,rgba(0,255,65,0.03) 2px,rgba(0,255,65,0.03) 4px);z-index:3;pointer-events:none}
+                    </style></head><body>
+                    <canvas id="m"></canvas><div class="sl"></div>
+                    <div class="c">
+                    <div class="cl" id="cl"></div>
+                    <h1>SWISS OTC CLOUD MANAGER</h1>
+                    <div class="sub">Cloud-Native RKE2 on Open Telekom Cloud eu-ch2</div>
+                    <div class="g">
+                    <div class="d"><h3>CCM</h3><p>InstancesV2</p></div>
+                    <div class="d"><h3>ELB</h3><p>v3 Dedicated</p></div>
+                    <div class="d"><h3>Auth</h3><p>AK/SK HMAC</p></div>
+                    <div class="d"><h3>Nodes</h3><p>3/3</p></div>
+                    <div class="d"><h3>Region</h3><p>eu-ch2a</p></div>
+                    <div class="d"><h3>K8s</h3><p>v1.34.4</p></div>
+                    </div>
+                    <div class="st">[ SYSTEM OPERATIONAL ] GitOps Pipeline Active</div>
+                    </div>
+                    <script>
+                    const c=document.getElementById("m"),x=c.getContext("2d");
+                    c.width=window.innerWidth;c.height=window.innerHeight;
+                    const cols=c.width/14,dr=Array(Math.floor(cols)).fill(1);
+                    function draw(){x.fillStyle="rgba(10,10,15,0.05)";x.fillRect(0,0,c.width,c.height);
+                    x.fillStyle="#00ff41";x.font="14px monospace";
+                    dr.forEach((y,i)=>{const t=String.fromCharCode(0x30A0+Math.random()*96);
+                    x.fillText(t,i*14,y*14);if(y*14>c.height&&Math.random()>0.975)dr[i]=0;dr[i]++})}
+                    setInterval(draw,33);
+                    setInterval(()=>{document.getElementById("cl").textContent=new Date().toLocaleTimeString("en",{hour12:false,timeZone:"Europe/Zurich"})},1000);
+                    </script></body></html>
+                    HTMLEOF
+                    nginx -g "daemon off;"
+          MANIFEST
+
+          # Set EIP annotation if bandwidth > 0
+          if [ "$BANDWIDTH" != "0" ]; then
+            SVC_ANNOTATION="    otc.io/eip-bandwidth: \"${BANDWIDTH}\""
+          else
+            SVC_ANNOTATION=""
+          fi
+
+          cat >> /tmp/demo-app.yaml << SVCEOF
+          ---
+          apiVersion: v1
+          kind: Service
+          metadata:
+            name: cyberpunk-demo
+            namespace: default
+            annotations:
+          ${SVC_ANNOTATION}
+          spec:
+            type: LoadBalancer
+            selector:
+              app: cyberpunk-demo
+            ports:
+            - port: 80
+              targetPort: 80
+              protocol: TCP
+          SVCEOF
+
+          case "$ACTION" in
+            dry-run)
+              echo "=== DRY RUN ==="
+              kubectl apply -f /tmp/demo-app.yaml --dry-run=client
+              echo ""
+              echo "Would deploy demo app with EIP bandwidth: ${BANDWIDTH} Mbit/s"
+              ;;
+            deploy)
+              echo "=== DEPLOYING DEMO APP ==="
+              kubectl apply -f /tmp/demo-app.yaml
+              echo ""
+              echo "Waiting for LoadBalancer IP..."
+              for i in $(seq 1 30); do
+                sleep 10
+                IP=$(kubectl get svc cyberpunk-demo -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null)
+                if [ -n "$IP" ]; then
+                  echo ""
+                  echo "============================================"
+                  echo "  🎉 DEMO APP LIVE: http://${IP}/"
+                  echo "============================================"
+                  break
+                fi
+                echo "  waiting for ELB... (${i}/30)"
+              done
+              echo ""
+              kubectl get svc cyberpunk-demo
+              kubectl get pods -l app=cyberpunk-demo
+              ;;
+            destroy)
+              echo "=== DESTROYING DEMO APP ==="
+              kubectl delete svc cyberpunk-demo --ignore-not-found
+              echo "Waiting for ELB cleanup..."
+              sleep 15
+              kubectl delete deployment cyberpunk-demo --ignore-not-found
+              echo "✅ Demo app destroyed"
+              ;;
+          esac
