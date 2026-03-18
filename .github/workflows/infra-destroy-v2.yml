@@ -14,6 +14,7 @@ jobs:
   destroy:
     name: "Terraform Destroy"
     runs-on: ubuntu-latest
+    environment: production
     env:
       AWS_ACCESS_KEY_ID: ${{ secrets.OTC_ACCESS_KEY }}
       AWS_SECRET_ACCESS_KEY: ${{ secrets.OTC_SECRET_KEY }}
@@ -52,7 +53,7 @@ jobs:
         run: |
           BASTION_IP=$(terraform output -raw bastion_public_ip 2>/dev/null || echo "")
           MASTER_IP=$(terraform output -raw master_private_ip 2>/dev/null || echo "")
-          if [ -z "$BASTION_IP" ]; then echo "No bastion IP in state — skip ELB cleanup"; exit 0; fi
+          if [ -z "$BASTION_IP" ]; then echo "No bastion IP — skip ELB cleanup"; exit 0; fi
 
           echo "$SSH_PRIVATE_KEY" > /tmp/master-key && chmod 600 /tmp/master-key
           ssh-keyscan -H $BASTION_IP >> ~/.ssh/known_hosts 2>/dev/null
@@ -60,7 +61,9 @@ jobs:
           ssh ubuntu@$BASTION_IP "chmod 600 /tmp/master-key"
           ssh -o StrictHostKeyChecking=no ubuntu@$BASTION_IP \
             "ssh -o StrictHostKeyChecking=no -i /tmp/master-key ubuntu@$MASTER_IP \
-            'sudo /var/lib/rancher/rke2/bin/kubectl --kubeconfig /etc/rancher/rke2/rke2.yaml delete svc demo-lb -n default 2>/dev/null || true; sleep 30'" || true
+            'sudo /var/lib/rancher/rke2/bin/kubectl --kubeconfig /etc/rancher/rke2/rke2.yaml \
+              delete svc --all -n default 2>/dev/null || true; sleep 30'" || true
+          echo "ELB cleanup done"
 
       - name: Terraform Destroy
         if: github.event.inputs.confirm == 'DESTROY'
