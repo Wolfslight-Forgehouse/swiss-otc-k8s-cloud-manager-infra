@@ -70,9 +70,11 @@ resource "opentelekomcloud_compute_instance_v2" "worker" {
   }
 
   user_data = base64encode(templatefile("${path.module}/templates/worker-init.sh.tpl", {
-    cluster_token = var.cluster_token
-    master_ip     = opentelekomcloud_compute_instance_v2.master.access_ip_v4
-    proxy_host    = var.proxy_host
+    cluster_token  = var.cluster_token
+    master_ip      = opentelekomcloud_compute_instance_v2.master.access_ip_v4
+    proxy_host     = var.proxy_host
+    obs_access_key = var.obs_access_key
+    obs_secret_key = var.obs_secret_key
   }))
 
   lifecycle {

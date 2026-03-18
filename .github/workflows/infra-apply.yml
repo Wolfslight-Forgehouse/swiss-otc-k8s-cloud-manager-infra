@@ -76,6 +76,7 @@ jobs:
           echo "subnet_id=$(terraform output -raw subnet_id)"                   >> $GITHUB_OUTPUT
           echo "subnet_network_id=$(terraform output -raw subnet_network_id)"   >> $GITHUB_OUTPUT
           echo "security_group_id=$(terraform output -raw security_group_id)"   >> $GITHUB_OUTPUT
+          echo "worker_ips_json=$(terraform output -raw worker_ips_json)"          >> $GITHUB_OUTPUT
 
     outputs:
       master_ip:          ${{ steps.tf-apply.outputs.master_ip }}
@@ -85,6 +86,7 @@ jobs:
       subnet_id:          ${{ steps.tf-apply.outputs.subnet_id }}
       subnet_network_id:  ${{ steps.tf-apply.outputs.subnet_network_id }}
       security_group_id:  ${{ steps.tf-apply.outputs.security_group_id }}
+      worker_ips_json:    ${{ steps.tf-apply.outputs.worker_ips_json }}
 
 # ─────────────────────────────────────────────────────────
 # JOB 2: Post-Apply — kubeconfig, CCM, Demo App
@@ -99,7 +101,8 @@ jobs:
       MASTER_IP:  ${{ needs.apply.outputs.master_ip }}
       VPC_ID:     ${{ needs.apply.outputs.vpc_id }}
       SUBNET_ID:  ${{ needs.apply.outputs.subnet_network_id }}
-      NETWORK_ID: ${{ needs.apply.outputs.subnet_id }}
+      NETWORK_ID:        ${{ needs.apply.outputs.subnet_id }}
+      WORKER_IPS_JSON:   ${{ needs.apply.outputs.worker_ips_json }}
 
     steps:
       - uses: actions/checkout@v4
@@ -274,6 +277,62 @@ CLOUDEOF
             -l app=openstack-cinder-csi
           kubectl --insecure-skip-tls-verify get sc
 
+
+      # ── Deploy CSI-S3 (OBS Object Storage) ────────────
+      - name: Deploy CSI-S3 (OBS ReadWriteMany Storage)
+        env:
+          OTC_AK:   ${{ secrets.OTC_ACCESS_KEY }}
+          OTC_SK:   ${{ secrets.OTC_SECRET_KEY }}
+          GHCR_PAT: ${{ secrets.GHCR_PULL_TOKEN }}
+        run: |
+          # imagePullSecret für GHCR (csi-s3-driver ist private package)
+          kubectl --insecure-skip-tls-verify create secret docker-registry ghcr-pull-secret \
+            --namespace kube-system \
+            --docker-server=ghcr.io \
+            --docker-username=wolfslight-forgehouse \
+            --docker-password="$GHCR_PAT" \
+            --dry-run=client -o yaml | kubectl --insecure-skip-tls-verify apply -f -
+
+          # Helm repo
+          helm repo add csi-s3 https://yandex-cloud.github.io/k8s-csi-s3/charts
+          helm repo update
+
+          # Deploy csi-s3
+          helm upgrade --install csi-s3 csi-s3/csi-s3 \
+            --namespace kube-system \
+            --version 0.43.4 \
+            -f deploy/helm/csi-s3/values.yaml \
+            --set secret.accessKey="$OTC_AK" \
+            --set secret.secretKey="$OTC_SK" \
+            --insecure-skip-tls-verify \
+            --wait --timeout=5m
+
+          # Patch 1: imagePullSecrets auf DaemonSet (Package ist private)
+          kubectl --insecure-skip-tls-verify patch daemonset csi-s3 -n kube-system \
+            --type=json \
+            -p='[{"op":"add","path":"/spec/template/spec/imagePullSecrets","value":[{"name":"ghcr-pull-secret"}]}]'
+
+          # Patch 2: Provisioner socket-dir von emptyDir → hostPath
+          # (CSI Provisioner + Node Pod müssen denselben Socket teilen)
+          kubectl --insecure-skip-tls-verify patch statefulset csi-s3-provisioner -n kube-system \
+            --type=json \
+            -p='[
+              {"op":"replace","path":"/spec/template/spec/volumes/0",
+               "value":{"name":"socket-dir","hostPath":{"path":"/var/lib/kubelet/plugins/ru.yandex.s3.csi","type":"DirectoryOrCreate"}}},
+              {"op":"add","path":"/spec/template/spec/imagePullSecrets","value":[{"name":"ghcr-pull-secret"}]}
+            ]'
+
+          echo "⏳ Warte auf CSI-S3 pods..."
+          kubectl --insecure-skip-tls-verify rollout status daemonset/csi-s3 \
+            -n kube-system --timeout=3m || true
+          kubectl --insecure-skip-tls-verify wait pod \
+            -n kube-system -l app=csi-s3-provisioner \
+            --for=condition=Ready --timeout=3m || true
+
+          echo "✅ CSI-S3 deployed"
+          kubectl --insecure-skip-tls-verify get pods -n kube-system | grep csi-s3
+          kubectl --insecure-skip-tls-verify get sc | grep obs
+
       # ── Deploy Demo App + wait for ELB ─────────────────
       - name: Deploy Demo App
         run: |
@@ -323,6 +382,12 @@ CLOUDEOF
             echo "| Master IP | \`${MASTER_IP}\` |"
             echo "| VPC ID | \`${VPC_ID}\` |"
             echo "| Demo App ELB | \`${ELB_IP:-not yet assigned}\` |"
+            echo ""
+            echo "### Storage"
+            echo "| StorageClass | Driver | AccessMode |"
+            echo "|---|---|---|"
+            echo "| \`csi-cinder-sc-delete\` | Cinder CSI | ReadWriteOnce (EVS Block) |"
+            echo "| \`csi-obs\` | CSI-S3 GeeseFS | ReadWriteMany (OBS S3) |"
             echo ""
             echo "### SSH Access"
             echo "\`\`\`bash"

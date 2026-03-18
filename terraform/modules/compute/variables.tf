@@ -56,3 +56,15 @@ variable "ssh_key_hash" {
   description = "Hash of SSH public key — triggers VM recreation on key change"
   default     = ""
 }
+
+variable "obs_access_key" {
+  description = "OTC AK for geesefs binary download from OBS (cloud-init)"
+  type        = string
+  sensitive   = true
+}
+
+variable "obs_secret_key" {
+  description = "OTC SK for geesefs binary download from OBS (cloud-init)"
+  type        = string
+  sensitive   = true
+}
