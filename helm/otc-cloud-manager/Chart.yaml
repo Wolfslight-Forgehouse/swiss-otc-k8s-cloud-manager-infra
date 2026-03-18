@@ -1,0 +1,14 @@
+apiVersion: v2
+name: otc-cloud-manager
+description: OTC Cloud Controller Manager for RKE2 on Swiss Open Telekom Cloud
+type: application
+version: 1.0.0
+appVersion: "0.1.0"
+keywords:
+  - cloud-controller-manager
+  - opentelekom
+  - rke2
+  - otc
+maintainers:
+  - name: SkyNet Labs
+    url: https://github.com/Wolfslight-Forgehouse

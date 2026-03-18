@@ -1,0 +1,10 @@
+# Demo Environment Overrides
+cluster:
+  name: "rke2-demo"
+
+otc:
+  region: "eu-ch2"
+  authUrl: "https://iam.eu-ch2.otc.t-systems.com/v3"
+
+# Credentials come from Kubernetes Secret (set via CI/CD)
+# See docs/credentials.md for required GitHub Secrets
