@@ -235,7 +235,7 @@ jobs:
       - name: Deploy Demo App
         run: |
           kubectl --insecure-skip-tls-verify apply \
-            -f examples/kubernetes/test-loadbalancer-service.yaml
+            -f deploy/k8s/demo-app.yaml
 
           echo "⏳ Waiting for ELB External-IP (OTC ELB v3 provisioning ~2 min)..."
           for i in $(seq 1 36); do
