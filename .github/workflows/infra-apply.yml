@@ -13,6 +13,9 @@ permissions:
 # ─────────────────────────────────────────────────────────
 # JOB 1: Terraform — provision OTC infrastructure
 # ─────────────────────────────────────────────────────────
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 jobs:
   apply:
     name: "Terraform Apply"
@@ -194,7 +197,7 @@ jobs:
           echo "KUBECONFIG=/tmp/kubeconfig" >> $GITHUB_ENV
 
       # ── Deploy Cloud Manager ───────────────────────────
-      - uses: azure/setup-helm@v3
+      - uses: azure/setup-helm@v4
         with:
           version: "3.14.0"
 
