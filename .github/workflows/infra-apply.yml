@@ -235,19 +235,21 @@ jobs:
       # ── Deploy Cinder CSI (EVS Storage) ─────────────────
       - name: Deploy Cinder CSI (EVS PVC Support)
         env:
-          OTC_AK:         ${{ secrets.OTC_ACCESS_KEY }}
-          OTC_SK:         ${{ secrets.OTC_SECRET_KEY }}
+          OTC_USERNAME:   ${{ secrets.OTC_USERNAME }}
+          OTC_PASSWORD:   ${{ secrets.OTC_PASSWORD }}
           OTC_PROJECT_ID: ${{ secrets.OTC_PROJECT_ID }}
+          OTC_DOMAIN_NAME: ${{ secrets.OTC_DOMAIN_NAME }}
         run: |
-          # cloud.conf als Kubernetes Secret erstellen (INI format)
+          # cloud.conf als Kubernetes Secret erstellen (INI format, Username/Password)
           cat > /tmp/cinder-cloud.conf << CLOUDEOF
-          [Global]
-          auth-url=https://iam-pub.eu-ch2.sc.otc.t-systems.com/v3
-          region=eu-ch2
-          access-key=${OTC_AK}
-          secret-key=${OTC_SK}
-          project-id=${OTC_PROJECT_ID}
-          CLOUDEOF
+[Global]
+auth-url=https://iam-pub.eu-ch2.sc.otc.t-systems.com/v3
+username=${OTC_USERNAME}
+password=${OTC_PASSWORD}
+region=eu-ch2
+tenant-id=${OTC_PROJECT_ID}
+domain-name=${OTC_DOMAIN_NAME}
+CLOUDEOF
 
           kubectl --insecure-skip-tls-verify create secret generic cinder-csi-cloud-config \
             --namespace kube-system \
