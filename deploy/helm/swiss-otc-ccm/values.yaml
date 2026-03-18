@@ -34,7 +34,6 @@ cloudConfig:
   loadbalancer:
     availabilityZones:
       - eu-ch2a
-      - eu-ch2b
   metadata:
     clusterId: ""
 
