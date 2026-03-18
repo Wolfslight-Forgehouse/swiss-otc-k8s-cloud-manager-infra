@@ -10,52 +10,10 @@ permissions:
   contents: read
 
 jobs:
-  # Step 1: Clean up K8s LoadBalancer services so CCM deletes ELBs
-  pre-destroy:
-    name: "Pre-Destroy: Clean ELBs"
-    runs-on: [self-hosted, otc]
-    if: github.event.inputs.confirm == 'DESTROY'
-    steps:
-      - name: Delete LoadBalancer services
-        run: |
-          echo "=== Cleaning up LoadBalancer services ==="
-          # Get all LoadBalancer services across all namespaces
-          LB_SVCS=$(kubectl get svc --all-namespaces -o json | \
-            jq -r '.items[] | select(.spec.type=="LoadBalancer") | "\(.metadata.namespace)/\(.metadata.name)"')
-          
-          if [ -z "$LB_SVCS" ]; then
-            echo "No LoadBalancer services found — nothing to clean up"
-            exit 0
-          fi
-          
-          echo "Found LoadBalancer services:"
-          echo "$LB_SVCS"
-          
-          # Delete each service
-          echo "$LB_SVCS" | while read svc; do
-            NS=$(echo $svc | cut -d/ -f1)
-            NAME=$(echo $svc | cut -d/ -f2)
-            echo "Deleting $NS/$NAME..."
-            kubectl delete svc "$NAME" -n "$NS" --timeout=60s || true
-          done
-          
-          # Wait for CCM to clean up ELBs on OTC
-          echo "Waiting 30s for CCM to delete ELBs on OTC..."
-          sleep 30
-          
-          # Verify no more pending LBs
-          REMAINING=$(kubectl get svc --all-namespaces -o json | \
-            jq -r '.items[] | select(.spec.type=="LoadBalancer") | .metadata.name' | wc -l)
-          echo "Remaining LoadBalancer services: $REMAINING"
-    continue-on-error: true  # Don't block destroy if runner is offline
-
-  # Step 2: Terraform Destroy
   destroy:
     name: "Terraform Destroy"
-    needs: pre-destroy
     runs-on: ubuntu-latest
-    environment: production
-    if: github.event.inputs.confirm == 'DESTROY' && always()
+    if: github.event.inputs.confirm == 'DESTROY'
     env:
       AWS_ACCESS_KEY_ID: ${{ secrets.OTC_ACCESS_KEY }}
       AWS_SECRET_ACCESS_KEY: ${{ secrets.OTC_SECRET_KEY }}
@@ -74,15 +32,54 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Setup SSH agent
+        uses: webfactory/ssh-agent@v0.8.0
+        with:
+          ssh-private-key: ${{ secrets.SSH_PRIVATE_KEY }}
+
+      - name: Get Bastion IP from TF State
+        id: bastion
+        run: |
+          pip install awscli --quiet 2>/dev/null || true
+          terraform init -input=false
+          BASTION_IP=$(terraform output -raw bastion_public_ip 2>/dev/null || echo "")
+          MASTER_IP=$(terraform output -raw master_private_ip 2>/dev/null || echo "")
+          echo "bastion_ip=$BASTION_IP" >> $GITHUB_OUTPUT
+          echo "master_ip=$MASTER_IP" >> $GITHUB_OUTPUT
+          echo "Bastion: $BASTION_IP | Master: $MASTER_IP"
+
+      - name: Pre-Destroy: Clean ELBs via kubectl
+        if: steps.bastion.outputs.bastion_ip != ''
+        continue-on-error: true
+        env:
+          BASTION_IP: ${{ steps.bastion.outputs.bastion_ip }}
+          MASTER_IP: ${{ steps.bastion.outputs.master_ip }}
+        run: |
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > /tmp/master-key && chmod 600 /tmp/master-key
+          ssh-keyscan -H $BASTION_IP >> ~/.ssh/known_hosts 2>/dev/null
+
+          # Copy key to bastion
+          scp -o StrictHostKeyChecking=no -i /tmp/master-key /tmp/master-key ubuntu@$BASTION_IP:/tmp/master-key
+          ssh ubuntu@$BASTION_IP "chmod 600 /tmp/master-key"
+
+          # Delete all LoadBalancer services
+          ssh -o StrictHostKeyChecking=no ubuntu@$BASTION_IP \
+            "ssh -o StrictHostKeyChecking=no -i /tmp/master-key ubuntu@$MASTER_IP \
+            'K=\"sudo /var/lib/rancher/rke2/bin/kubectl --kubeconfig /etc/rancher/rke2/rke2.yaml\"
+             \$K get svc --all-namespaces | grep LoadBalancer || true
+             \$K delete svc --all-namespaces -l \"\" --field-selector spec.type=LoadBalancer 2>/dev/null || true
+             # Direct delete demo-lb
+             \$K delete svc demo-lb -n default 2>/dev/null || true
+             echo Waiting 30s for CCM to delete ELBs...
+             sleep 30'" || true
+          echo "Pre-destroy ELB cleanup done"
+
       - uses: hashicorp/setup-terraform@v3
         with:
           terraform_version: "1.7"
 
       - name: Terraform Init
         run: terraform init
-
-      - name: Terraform Plan Destroy
-        run: terraform plan -destroy -no-color
 
       - name: Terraform Destroy
         run: terraform destroy -auto-approve
