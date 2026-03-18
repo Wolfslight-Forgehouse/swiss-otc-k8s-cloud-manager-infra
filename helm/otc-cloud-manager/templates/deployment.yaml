@@ -1,0 +1,41 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: otc-cloud-controller-manager
+  namespace: kube-system
+  labels:
+    app: otc-cloud-manager
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      app: otc-cloud-manager
+  template:
+    metadata:
+      labels:
+        app: otc-cloud-manager
+    spec:
+      serviceAccountName: {{ .Values.serviceAccount.name }}
+      nodeSelector: {{ toYaml .Values.nodeSelector | nindent 8 }}
+      tolerations: {{ toYaml .Values.tolerations | nindent 8 }}
+      hostNetwork: true
+      containers:
+        - name: cloud-controller-manager
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          args:
+            - /bin/openstack-cloud-controller-manager
+            - --v=2
+            - --cloud-config=/etc/otc/cloud.conf
+            - --cloud-provider=openstack
+            - --use-service-account-credentials=true
+            - --bind-address=127.0.0.1
+          volumeMounts:
+            - name: cloud-config
+              mountPath: /etc/otc
+              readOnly: true
+          resources: {{ toYaml .Values.resources | nindent 12 }}
+      volumes:
+        - name: cloud-config
+          secret:
+            secretName: otc-cloud-config

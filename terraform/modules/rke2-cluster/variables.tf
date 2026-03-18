@@ -1,0 +1,10 @@
+variable "cluster_name"  { type = string }
+variable "region"        { type = string }
+variable "vpc_id"        { type = string }
+variable "subnet_id"     { type = string }
+variable "secgroup_id"   { type = string }
+variable "master_flavor" { type = string }
+variable "worker_flavor" { type = string }
+variable "worker_count"  { type = number }
+variable "image_name"    { type = string }
+variable "key_pair"      { type = string }

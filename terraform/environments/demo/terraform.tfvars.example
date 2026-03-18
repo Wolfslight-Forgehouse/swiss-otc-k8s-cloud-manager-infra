@@ -1,0 +1,18 @@
+# Copy this file to terraform.tfvars and fill in your values
+# Never commit terraform.tfvars to git!
+
+otc_access_key  = "YOUR_OTC_ACCESS_KEY"
+otc_secret_key  = "YOUR_OTC_SECRET_KEY"
+otc_domain_name = "OTC-EU-DE-yourcompany"
+otc_project_id  = "your-project-id-here"
+
+region       = "eu-ch2"
+cluster_name = "rke2-demo"
+key_pair     = "your-keypair-name"
+
+vpc_cidr    = "10.0.0.0/16"
+subnet_cidr = "10.0.1.0/24"
+
+master_flavor = "s3.xlarge.4"
+worker_flavor = "s3.large.4"
+worker_count  = 2

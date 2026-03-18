@@ -1,0 +1,33 @@
+# OTC Cloud Provider Configuration
+# This is used both as /etc/rancher/rke2/cloud.conf on nodes
+# and as Kubernetes Secret in kube-system namespace
+
+# Template — replace placeholders with actual values
+# To create as secret:
+#   kubectl create secret generic otc-cloud-config \
+#     --from-file=cloud.conf=./cloud.conf \
+#     -n kube-system
+
+# cloud.conf content:
+[Global]
+auth-url=https://iam.eu-ch2.otc.t-systems.com/v3
+username=<OTC_USERNAME>
+password=<OTC_PASSWORD>
+tenant-name=<OTC_TENANT_NAME>
+domain-name=<OTC_DOMAIN_NAME>
+region=eu-ch2
+
+[LoadBalancer]
+subnet-id=<OTC_ELB_SUBNET_ID>
+floating-network-id=<OTC_FLOATING_NETWORK_ID>
+network-id=<OTC_NETWORK_ID>
+create-monitor=true
+monitor-delay=5s
+monitor-timeout=3s
+monitor-max-retries=3
+lb-method=ROUND_ROBIN
+lb-provider=vlb
+
+[Networking]
+public-network-name=admin_external_net
+ipv6-support-disabled=true

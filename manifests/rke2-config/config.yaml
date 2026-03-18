@@ -1,0 +1,29 @@
+# /etc/rancher/rke2/config.yaml — RKE2 Server Configuration
+# Place this file on the master node before starting rke2-server
+
+# Node identity
+node-name: rke2-demo-master
+
+# Cloud provider integration
+cloud-provider-name: openstack
+cloud-provider-config: /etc/rancher/rke2/cloud.conf
+
+# TLS SANs — add your master's floating IP and internal IP
+tls-san:
+  - 127.0.0.1
+  # - <MASTER_FLOATING_IP>
+  # - <MASTER_INTERNAL_IP>
+
+# CNI
+cni: canal
+
+# Disable kube-proxy (optional: use eBPF)
+# disable-kube-proxy: true
+
+# Cluster DNS
+cluster-dns: 10.96.0.10
+cluster-domain: cluster.local
+
+# Etcd snapshot
+etcd-snapshot-schedule-cron: "0 */6 * * *"
+etcd-snapshot-retention: 5

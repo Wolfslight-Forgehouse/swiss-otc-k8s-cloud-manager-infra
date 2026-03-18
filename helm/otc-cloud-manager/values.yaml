@@ -1,0 +1,45 @@
+replicaCount: 1
+
+image:
+  repository: quay.io/k8scloudprovider/openstack-cloud-controller-manager
+  pullPolicy: IfNotPresent
+  tag: "latest"
+
+otc:
+  authUrl: ""          # https://iam.eu-ch2.otc.t-systems.com/v3
+  username: ""
+  password: ""
+  projectId: ""
+  domainName: ""
+  region: "eu-ch2"
+  tenantName: ""
+
+  elb:
+    subnetId: ""       # Subnet ID for ELB instances
+    floatingNetworkId: "" # admin_external_net ID
+    networkId: ""      # VPC Network ID
+
+cluster:
+  name: "rke2-demo"
+
+nodeSelector:
+  node-role.kubernetes.io/control-plane: "true"
+
+tolerations:
+  - key: node-role.kubernetes.io/control-plane
+    effect: NoSchedule
+  - key: node.cloudprovider.kubernetes.io/uninitialized
+    value: "true"
+    effect: NoSchedule
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 128Mi
+  limits:
+    cpu: 200m
+    memory: 256Mi
+
+serviceAccount:
+  create: true
+  name: "cloud-controller-manager"
