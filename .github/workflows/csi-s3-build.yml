@@ -43,8 +43,8 @@ jobs:
           context: csi-s3-src
           push: true
           tags: |
-            ghcr.io/${{ github.repository_owner }}/csi-s3-driver:${{ inputs.version }}
-            ghcr.io/${{ github.repository_owner }}/csi-s3-driver:latest
+            ghcr.io/wolfslight-forgehouse/csi-s3-driver:${{ inputs.version }}
+            ghcr.io/wolfslight-forgehouse/csi-s3-driver:latest
           platforms: linux/amd64,linux/arm64
           cache-from: type=gha
           cache-to: type=gha,mode=max
@@ -52,4 +52,4 @@ jobs:
       - name: Summary
         run: |
           echo "## ✅ csi-s3 image built & pushed" >> $GITHUB_STEP_SUMMARY
-          echo "Image: \`ghcr.io/${{ github.repository_owner }}/csi-s3-driver:${{ inputs.version }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "Image: \`ghcr.io/wolfslight-forgehouse/csi-s3-driver:${{ inputs.version }}\`" >> $GITHUB_STEP_SUMMARY
