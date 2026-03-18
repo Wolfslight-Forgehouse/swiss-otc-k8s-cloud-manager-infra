@@ -1,6 +1,6 @@
 image:
   # Option 1: Container image (for production/CI)
-  repository: ghcr.io/t-systems-ch/swiss-otc-cloud-controller-manager
+  repository: ghcr.io/wolfslight-forgehouse/swiss-otc-cloud-controller-manager
   tag: latest
   pullPolicy: Always
 
