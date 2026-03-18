@@ -88,12 +88,15 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Setup SSH
-        run: |
-          mkdir -p ~/.ssh
-          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/rke2-key
-          chmod 600 ~/.ssh/rke2-key
         env:
           SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+        run: |
+          mkdir -p ~/.ssh
+          echo "$SSH_PRIVATE_KEY" > ~/.ssh/rke2-key
+          chmod 600 ~/.ssh/rke2-key
+          # Add bastion to known_hosts to avoid host key verification failure
+          ssh-keyscan -T 10 -H "$BASTION_IP" >> ~/.ssh/known_hosts 2>/dev/null || true
+          ssh-keyscan -T 10 -p 22 "$BASTION_IP" >> ~/.ssh/known_hosts 2>/dev/null || true
 
       - name: Wait for RKE2 master
         run: |
