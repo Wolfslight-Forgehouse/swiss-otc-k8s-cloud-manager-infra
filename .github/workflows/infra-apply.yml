@@ -1,38 +1,46 @@
 name: "Terraform Apply"
+
 on:
   workflow_dispatch:
     inputs:
       confirm:
-        description: "Type APPLY to confirm"
+        description: "Type APPLY to confirm deployment"
         required: true
 
 permissions:
   contents: read
 
+# ─────────────────────────────────────────────────────────
+# JOB 1: Terraform — provision OTC infrastructure
+# ─────────────────────────────────────────────────────────
 jobs:
   apply:
     name: "Terraform Apply"
     runs-on: ubuntu-latest
     environment: production
     if: github.event.inputs.confirm == 'APPLY'
-    env:
-      AWS_ACCESS_KEY_ID: ${{ secrets.OTC_ACCESS_KEY }}
-      AWS_SECRET_ACCESS_KEY: ${{ secrets.OTC_SECRET_KEY }}
-      TF_VAR_access_key: ${{ secrets.OTC_ACCESS_KEY }}
-      TF_VAR_secret_key: ${{ secrets.OTC_SECRET_KEY }}
-      TF_VAR_project_id: ${{ secrets.OTC_PROJECT_ID }}
-      TF_VAR_ssh_public_key: ${{ secrets.SSH_PUBLIC_KEY }}
-      TF_VAR_ssh_private_key: ${{ secrets.SSH_PRIVATE_KEY }}
-      TF_VAR_rke2_token: ${{ secrets.RKE2_TOKEN }}
-      TF_VAR_ghcr_pull_token: ${{ secrets.GHCR_PULL_TOKEN }}
-      TF_VAR_domain_name: ""
-      TF_VAR_project_name: ""
-      TF_VAR_github_runner_token: ""
-      TF_VAR_gitlab_url: ""
-      TF_VAR_gitlab_runner_token: ""
     defaults:
       run:
         working-directory: terraform/environments/dev
+    env:
+      # OBS backend credentials (S3-compatible)
+      AWS_ACCESS_KEY_ID:     ${{ secrets.OTC_ACCESS_KEY }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.OTC_SECRET_KEY }}
+      # Terraform variables
+      TF_VAR_access_key:          ${{ secrets.OTC_ACCESS_KEY }}
+      TF_VAR_secret_key:          ${{ secrets.OTC_SECRET_KEY }}
+      TF_VAR_project_id:          ${{ secrets.OTC_PROJECT_ID }}
+      TF_VAR_ssh_public_key:      ${{ secrets.SSH_PUBLIC_KEY }}
+      TF_VAR_rke2_token:          ${{ secrets.RKE2_TOKEN }}
+      TF_VAR_ghcr_pull_token:     ${{ secrets.GHCR_PULL_TOKEN }}
+      # Optional — empty defaults
+      TF_VAR_domain_name:         ""
+      TF_VAR_project_name:        ""
+      TF_VAR_github_runner_token: ""
+      TF_VAR_gitlab_url:          ""
+      TF_VAR_gitlab_runner_token: ""
+      # SSH private key for Terraform provisioner (if needed)
+      TF_VAR_ssh_private_key: ""
 
     steps:
       - uses: actions/checkout@v4
@@ -42,6 +50,8 @@ jobs:
           terraform_version: "1.7"
           terraform_wrapper: false
 
+      # Init: pass OBS credentials explicitly via -backend-config
+      # (AWS_* env vars work for OBS but only when skip flags are set in backend.tf)
       - name: Terraform Init
         run: |
           terraform init \
@@ -55,11 +65,12 @@ jobs:
         id: tf-apply
         run: |
           terraform apply -auto-approve -no-color
-          echo "master_ip=$(terraform output -raw master_ip)"               >> $GITHUB_OUTPUT
-          echo "bastion_ip=$(terraform output -raw bastion_ip)"             >> $GITHUB_OUTPUT
+          # Capture outputs for downstream jobs
+          echo "master_ip=$(terraform output -raw master_ip)"                   >> $GITHUB_OUTPUT
+          echo "bastion_ip=$(terraform output -raw bastion_ip)"                 >> $GITHUB_OUTPUT
           echo "bastion_private_ip=$(terraform output -raw bastion_private_ip)" >> $GITHUB_OUTPUT
-          echo "vpc_id=$(terraform output -raw vpc_id)"                     >> $GITHUB_OUTPUT
-          echo "subnet_id=$(terraform output -raw subnet_id)"               >> $GITHUB_OUTPUT
+          echo "vpc_id=$(terraform output -raw vpc_id)"                         >> $GITHUB_OUTPUT
+          echo "subnet_id=$(terraform output -raw subnet_id)"                   >> $GITHUB_OUTPUT
           echo "subnet_network_id=$(terraform output -raw subnet_network_id)"   >> $GITHUB_OUTPUT
           echo "security_group_id=$(terraform output -raw security_group_id)"   >> $GITHUB_OUTPUT
 
@@ -72,63 +83,112 @@ jobs:
       subnet_network_id:  ${{ steps.tf-apply.outputs.subnet_network_id }}
       security_group_id:  ${{ steps.tf-apply.outputs.security_group_id }}
 
+# ─────────────────────────────────────────────────────────
+# JOB 2: Post-Apply — kubeconfig, CCM, Demo App
+# ─────────────────────────────────────────────────────────
   post-apply:
-    name: "Post-Apply: kubeconfig + CCM + Demo App"
+    name: "Post-Apply: CCM + Demo App"
     needs: apply
     runs-on: ubuntu-latest
     if: success()
     env:
-      BASTION_IP:  ${{ needs.apply.outputs.bastion_ip }}
-      MASTER_IP:   ${{ needs.apply.outputs.master_ip }}
-      VPC_ID:      ${{ needs.apply.outputs.vpc_id }}
-      SUBNET_ID:   ${{ needs.apply.outputs.subnet_network_id }}
-      NETWORK_ID:  ${{ needs.apply.outputs.subnet_id }}
+      BASTION_IP: ${{ needs.apply.outputs.bastion_ip }}
+      MASTER_IP:  ${{ needs.apply.outputs.master_ip }}
+      VPC_ID:     ${{ needs.apply.outputs.vpc_id }}
+      SUBNET_ID:  ${{ needs.apply.outputs.subnet_network_id }}
+      NETWORK_ID: ${{ needs.apply.outputs.subnet_id }}
 
     steps:
       - uses: actions/checkout@v4
 
-      - name: Setup SSH
+      # ── SSH Setup ──────────────────────────────────────
+      # Problem history:
+      #   - "Host key verification failed" → fixed by ssh-keyscan
+      #   - "Permission denied (publickey)" → key had surrounding quotes in 1Password
+      #   - "is not a key file" → printf strips newlines; echo also unreliable
+      # Solution: store key base64-encoded as SSH_PRIVATE_KEY_B64 secret
+      #   → base64 -d perfectly restores multiline PEM with all newlines intact
+      - name: Setup SSH agent
         env:
           SSH_PRIVATE_KEY_B64: ${{ secrets.SSH_PRIVATE_KEY_B64 }}
         run: |
           mkdir -p ~/.ssh
-          # Decode base64 key → preserves newlines perfectly across all platforms
+          chmod 700 ~/.ssh
+
+          # Decode base64 → multiline PEM preserved across all runner environments
           echo "$SSH_PRIVATE_KEY_B64" | base64 -d > ~/.ssh/rke2-key
           chmod 600 ~/.ssh/rke2-key
-          ssh-keygen -l -f ~/.ssh/rke2-key || (echo "❌ Invalid SSH key format"; exit 1)
-          ssh-keyscan -T 15 -H "$BASTION_IP" >> ~/.ssh/known_hosts 2>/dev/null || true
 
-      - name: Wait for RKE2 master
+          # Validate key is usable (fails fast if secret is misconfigured)
+          ssh-keygen -y -f ~/.ssh/rke2-key > ~/.ssh/rke2-key.pub || {
+            echo "❌ SSH key invalid — check SSH_PRIVATE_KEY_B64 secret"
+            exit 1
+          }
+          echo "✅ SSH key fingerprint: $(ssh-keygen -l -f ~/.ssh/rke2-key)"
+
+          # Pre-scan bastion host key → eliminates "Host key verification failed"
+          # Retry up to 3x in case bastion is still booting
+          for i in 1 2 3; do
+            ssh-keyscan -T 15 -H "$BASTION_IP" >> ~/.ssh/known_hosts 2>/dev/null && break
+            echo "  ssh-keyscan attempt $i failed, retrying..."
+            sleep 10
+          done
+          echo "✅ Bastion host key added to known_hosts"
+
+          # SSH config: use rke2-key for all OTC hosts, skip host checking for internal IPs
+          cat >> ~/.ssh/config << EOF
+          Host $BASTION_IP
+            IdentityFile ~/.ssh/rke2-key
+            StrictHostKeyChecking accept-new
+            ConnectTimeout 10
+
+          Host 10.0.*.*
+            IdentityFile ~/.ssh/rke2-key
+            StrictHostKeyChecking no
+            ProxyJump ubuntu@$BASTION_IP
+            ConnectTimeout 15
+          EOF
+          chmod 600 ~/.ssh/config
+
+      # ── Wait for RKE2 ──────────────────────────────────
+      - name: Wait for RKE2 master ready
         run: |
-          echo "⏳ Warte auf RKE2 master ($MASTER_IP via $BASTION_IP)..."
+          echo "⏳ Polling RKE2 server on $MASTER_IP (via $BASTION_IP)..."
+          READY=false
           for i in $(seq 1 40); do
-            if ssh -o StrictHostKeyChecking=no -o ConnectTimeout=5 \
-                -i ~/.ssh/rke2-key -J ubuntu@$BASTION_IP ubuntu@$MASTER_IP \
-                'sudo systemctl is-active rke2-server' 2>/dev/null | grep -q "^active$"; then
-              echo "✅ RKE2 aktiv"
+            STATUS=$(ssh -F ~/.ssh/config ubuntu@$MASTER_IP \
+              'sudo systemctl is-active rke2-server 2>/dev/null' 2>/dev/null || echo "unreachable")
+            echo "  [$(date +%H:%M:%S)] attempt $i/40 — rke2-server: $STATUS"
+            if [ "$STATUS" = "active" ]; then
+              READY=true
               break
             fi
-            echo "  Attempt $i/40 — 15s..."
             sleep 15
           done
+          $READY || { echo "❌ RKE2 master never became active"; exit 1; }
+          echo "✅ RKE2 master is active"
 
+      # ── Fetch kubeconfig ───────────────────────────────
       - name: Fetch kubeconfig
         run: |
-          ssh -o StrictHostKeyChecking=no -i ~/.ssh/rke2-key \
-            -J ubuntu@$BASTION_IP ubuntu@$MASTER_IP \
-            'sudo cat /etc/rancher/rke2/rke2.yaml' | \
-            sed "s/127.0.0.1/$MASTER_IP/g" > /tmp/kubeconfig
+          ssh -F ~/.ssh/config ubuntu@$MASTER_IP \
+            'sudo cat /etc/rancher/rke2/rke2.yaml' \
+            | sed "s/127\.0\.0\.1/$MASTER_IP/g" \
+            > /tmp/kubeconfig
+          chmod 600 /tmp/kubeconfig
           echo "KUBECONFIG=/tmp/kubeconfig" >> $GITHUB_ENV
+          echo "✅ kubeconfig fetched"
           kubectl --insecure-skip-tls-verify get nodes -o wide
 
+      # ── Deploy Cloud Manager ───────────────────────────
       - uses: azure/setup-helm@v3
         with:
           version: "3.14.0"
 
       - name: Deploy OTC Cloud Manager
         env:
-          OTC_AK: ${{ secrets.OTC_ACCESS_KEY }}
-          OTC_SK: ${{ secrets.OTC_SECRET_KEY }}
+          OTC_AK:         ${{ secrets.OTC_ACCESS_KEY }}
+          OTC_SK:         ${{ secrets.OTC_SECRET_KEY }}
           OTC_PROJECT_ID: ${{ secrets.OTC_PROJECT_ID }}
         run: |
           helm upgrade --install swiss-otc-ccm deploy/helm/swiss-otc-ccm/ \
@@ -142,43 +202,62 @@ jobs:
             --set config.loadbalancer.availability_zones[0]="eu-ch2a" \
             --insecure-skip-tls-verify \
             --wait --timeout=5m
-          kubectl --insecure-skip-tls-verify get pods -n kube-system -l app.kubernetes.io/name=swiss-otc-ccm
+          echo "✅ Cloud Manager deployed"
+          kubectl --insecure-skip-tls-verify get pods -n kube-system \
+            -l app.kubernetes.io/name=swiss-otc-ccm
 
-      - name: Deploy + Screenshot Demo App
+      # ── Deploy Demo App + wait for ELB ─────────────────
+      - name: Deploy Demo App
         run: |
-          kubectl --insecure-skip-tls-verify apply -f examples/kubernetes/test-loadbalancer-service.yaml
-          echo "⏳ Warte auf ELB External-IP..."
+          kubectl --insecure-skip-tls-verify apply \
+            -f examples/kubernetes/test-loadbalancer-service.yaml
+
+          echo "⏳ Waiting for ELB External-IP (OTC ELB v3 provisioning ~2 min)..."
           for i in $(seq 1 36); do
             EXT_IP=$(kubectl --insecure-skip-tls-verify get svc -A \
-              -o jsonpath='{.items[?(@.spec.type=="LoadBalancer")].status.loadBalancer.ingress[0].ip}' 2>/dev/null)
+              -o jsonpath='{range .items[?(@.spec.type=="LoadBalancer")]}{.status.loadBalancer.ingress[0].ip}{end}' \
+              2>/dev/null)
             if [ -n "$EXT_IP" ]; then
-              echo "✅ ELB IP: $EXT_IP"
+              echo "✅ ELB External-IP: $EXT_IP"
               echo "ELB_IP=$EXT_IP" >> $GITHUB_ENV
               break
             fi
-            echo "  Attempt $i/36 — 10s..."
+            echo "  Attempt $i/36 — waiting 10s..."
             sleep 10
           done
 
-      - name: Smoke Test
+      # ── Smoke Test ─────────────────────────────────────
+      - name: Smoke Test (HTTP)
         if: env.ELB_IP != ''
         run: |
+          echo "🌐 Testing http://$ELB_IP ..."
           for i in $(seq 1 12); do
-            HTTP=$(curl -s -o /tmp/response.html -w "%{http_code}" --max-time 5 "http://$ELB_IP" || echo "000")
-            echo "HTTP $HTTP"
-            [ "$HTTP" = "200" ] && break
+            HTTP=$(curl -s -o /tmp/demo-response.html -w "%{http_code}" \
+              --max-time 5 "http://$ELB_IP" || echo "000")
+            echo "  HTTP $HTTP (attempt $i/12)"
+            if [ "$HTTP" = "200" ]; then
+              echo "✅ Demo App is reachable!"
+              break
+            fi
             sleep 10
           done
-          cat /tmp/response.html | head -5
 
+      # ── Job Summary ────────────────────────────────────
       - name: Summary
         if: always()
         run: |
           {
-            echo "## 🚀 E2E Deployment"
+            echo "## 🚀 E2E Deployment Summary"
+            echo ""
             echo "| Resource | Value |"
             echo "|---|---|"
-            echo "| Bastion IP | \`$BASTION_IP\` |"
-            echo "| Master IP | \`$MASTER_IP\` |"
-            echo "| Demo App ELB | \`${ELB_IP:-pending}\` |"
+            echo "| Bastion IP | \`${BASTION_IP}\` |"
+            echo "| Master IP | \`${MASTER_IP}\` |"
+            echo "| VPC ID | \`${VPC_ID}\` |"
+            echo "| Demo App ELB | \`${ELB_IP:-not yet assigned}\` |"
+            echo ""
+            echo "### SSH Access"
+            echo "\`\`\`bash"
+            echo "ssh -J ubuntu@${BASTION_IP} ubuntu@${MASTER_IP}"
+            echo "\`\`\`"
           } >> $GITHUB_STEP_SUMMARY
