@@ -24,7 +24,7 @@ jobs:
       TF_VAR_rke2_token: ${{ secrets.RKE2_TOKEN }}
       TF_VAR_ghcr_pull_token: ${{ secrets.GHCR_PULL_TOKEN }}
       TF_VAR_domain_name: ${{ secrets.OTC_DOMAIN_NAME }}
-      TF_VAR_project_name: ${{ secrets.OTC_DOMAIN_NAME }}
+      TF_VAR_project_name: ${{ secrets.OTC_PROJECT_NAME }}
       TF_VAR_github_runner_token: ""
       TF_VAR_gitlab_url: ""
       TF_VAR_gitlab_runner_token: ""
