@@ -72,6 +72,8 @@ module "compute" {
   cluster_token     = var.rke2_token
   ssh_key_hash      = module.networking.ssh_public_key_hash
   proxy_host        = module.jumpserver.private_ip
+  obs_access_key   = var.access_key
+  obs_secret_key   = var.secret_key
 
   depends_on = [module.networking, module.jumpserver]
 }
