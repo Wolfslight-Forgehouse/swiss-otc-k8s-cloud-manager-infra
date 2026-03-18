@@ -244,15 +244,9 @@ jobs:
           OTC_DOMAIN_NAME: ${{ secrets.OTC_DOMAIN_NAME }}
         run: |
           # cloud.conf als Kubernetes Secret erstellen (INI format, Username/Password)
-          cat > /tmp/cinder-cloud.conf << CLOUDEOF
-[Global]
-auth-url=https://iam-pub.eu-ch2.sc.otc.t-systems.com/v3
-username=${OTC_USERNAME}
-password=${OTC_PASSWORD}
-region=eu-ch2
-tenant-id=${OTC_PROJECT_ID}
-domain-name=${OTC_DOMAIN_NAME}
-CLOUDEOF
+          printf '[Global]\nauth-url=https://iam-pub.eu-ch2.sc.otc.t-systems.com/v3\nusername=%s\npassword=%s\nregion=eu-ch2\ntenant-id=%s\ndomain-name=%s\n' \
+            "${OTC_USERNAME}" "${OTC_PASSWORD}" "${OTC_PROJECT_ID}" "${OTC_DOMAIN_NAME}" \
+            > /tmp/cinder-cloud.conf
 
           kubectl --insecure-skip-tls-verify create secret generic cinder-csi-cloud-config \
             --namespace kube-system \
@@ -290,44 +284,31 @@ CLOUDEOF
             --namespace kube-system \
             --docker-server=ghcr.io \
             --docker-username=wolfslight-forgehouse \
-            --docker-password="$GHCR_PAT" \
+            --docker-password="${GHCR_PAT}" \
             --dry-run=client -o yaml | kubectl --insecure-skip-tls-verify apply -f -
 
-          # Helm repo
-          helm repo add csi-s3 https://yandex-cloud.github.io/k8s-csi-s3/charts
+          helm repo add csi-s3 https://yandex-cloud.github.io/k8s-csi-s3/charts 2>/dev/null || true
           helm repo update
 
-          # Deploy csi-s3
           helm upgrade --install csi-s3 csi-s3/csi-s3 \
             --namespace kube-system \
             --version 0.43.4 \
             -f deploy/helm/csi-s3/values.yaml \
-            --set secret.accessKey="$OTC_AK" \
-            --set secret.secretKey="$OTC_SK" \
+            --set secret.accessKey="${OTC_AK}" \
+            --set secret.secretKey="${OTC_SK}" \
             --insecure-skip-tls-verify \
             --wait --timeout=5m
 
-          # Patch 1: imagePullSecrets auf DaemonSet (Package ist private)
-          kubectl --insecure-skip-tls-verify patch daemonset csi-s3 -n kube-system \
-            --type=json \
-            -p='[{"op":"add","path":"/spec/template/spec/imagePullSecrets","value":[{"name":"ghcr-pull-secret"}]}]'
+          # Patch 1: imagePullSecrets auf DaemonSet
+          DS_PATCH='[{"op":"add","path":"/spec/template/spec/imagePullSecrets","value":[{"name":"ghcr-pull-secret"}]}]'
+          kubectl --insecure-skip-tls-verify patch daemonset csi-s3 -n kube-system --type=json -p="${DS_PATCH}"
 
-          # Patch 2: Provisioner socket-dir von emptyDir → hostPath
-          # (CSI Provisioner + Node Pod müssen denselben Socket teilen)
-          kubectl --insecure-skip-tls-verify patch statefulset csi-s3-provisioner -n kube-system \
-            --type=json \
-            -p='[
-              {"op":"replace","path":"/spec/template/spec/volumes/0",
-               "value":{"name":"socket-dir","hostPath":{"path":"/var/lib/kubelet/plugins/ru.yandex.s3.csi","type":"DirectoryOrCreate"}}},
-              {"op":"add","path":"/spec/template/spec/imagePullSecrets","value":[{"name":"ghcr-pull-secret"}]}
-            ]'
+          # Patch 2: Provisioner socket-dir hostPath + imagePullSecrets
+          STS_PATCH='[{"op":"replace","path":"/spec/template/spec/volumes/0","value":{"name":"socket-dir","hostPath":{"path":"/var/lib/kubelet/plugins/ru.yandex.s3.csi","type":"DirectoryOrCreate"}}},{"op":"add","path":"/spec/template/spec/imagePullSecrets","value":[{"name":"ghcr-pull-secret"}]}]'
+          kubectl --insecure-skip-tls-verify patch statefulset csi-s3-provisioner -n kube-system --type=json -p="${STS_PATCH}"
 
-          echo "⏳ Warte auf CSI-S3 pods..."
-          kubectl --insecure-skip-tls-verify rollout status daemonset/csi-s3 \
-            -n kube-system --timeout=3m || true
-          kubectl --insecure-skip-tls-verify wait pod \
-            -n kube-system -l app=csi-s3-provisioner \
-            --for=condition=Ready --timeout=3m || true
+          kubectl --insecure-skip-tls-verify rollout status daemonset/csi-s3 -n kube-system --timeout=3m || true
+          kubectl --insecure-skip-tls-verify wait pod -n kube-system -l app=csi-s3-provisioner --for=condition=Ready --timeout=3m || true
 
           echo "✅ CSI-S3 deployed"
           kubectl --insecure-skip-tls-verify get pods -n kube-system | grep csi-s3
