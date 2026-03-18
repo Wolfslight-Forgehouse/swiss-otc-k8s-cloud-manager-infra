@@ -1,0 +1,163 @@
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: demo-html
+  namespace: default
+data:
+  index.html: |
+    <!DOCTYPE html>
+    <html lang="en">
+    <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SkyNet Labs // Swiss OTC Node</title>
+    <style>
+      @import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Orbitron:wght@400;700;900&display=swap');
+      * { margin: 0; padding: 0; box-sizing: border-box; }
+      body { background: #000; color: #00ff41; font-family: 'Share Tech Mono', monospace; overflow: hidden; height: 100vh; }
+      #matrix-canvas { position: fixed; top: 0; left: 0; width: 100%; height: 100%; z-index: 0; opacity: 0.18; }
+      .container { position: relative; z-index: 10; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; gap: 20px; }
+      .glitch-title { font-family: 'Orbitron', monospace; font-size: clamp(2rem, 6vw, 5rem); font-weight: 900; text-transform: uppercase; color: #00ff41; text-shadow: 0 0 10px #00ff41, 0 0 30px #00ff41, 0 0 60px #00ff41; animation: glitch 3s infinite; letter-spacing: 0.15em; }
+      @keyframes glitch { 0%, 90%, 100% { text-shadow: 0 0 10px #00ff41, 0 0 30px #00ff41, 0 0 60px #00ff41; transform: translate(0); } 92% { transform: translate(-3px, 1px); text-shadow: -3px 0 #ff0080, 3px 0 #00cfff; } 94% { transform: translate(3px, -1px); text-shadow: 3px 0 #ff0080, -3px 0 #00cfff; } 96% { transform: translate(-2px, 2px); text-shadow: -2px 0 #ff0080, 2px 0 #00cfff; } 98% { transform: translate(0); text-shadow: 0 0 10px #00ff41, 0 0 30px #00ff41; } }
+      .subtitle { font-size: clamp(0.7rem, 2vw, 1rem); color: #00cfff; letter-spacing: 0.3em; text-transform: uppercase; text-shadow: 0 0 10px #00cfff; animation: pulse 2s ease-in-out infinite; }
+      @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
+      .panel { background: rgba(0,255,65,0.03); border: 1px solid #00ff41; padding: 20px 40px; min-width: 500px; max-width: 90vw; box-shadow: 0 0 20px rgba(0,255,65,0.2), inset 0 0 20px rgba(0,255,65,0.03); animation: scanline 8s linear infinite; }
+      @keyframes scanline { 0%, 100% { box-shadow: 0 0 20px rgba(0,255,65,0.2), inset 0 0 20px rgba(0,255,65,0.03); } 50% { box-shadow: 0 0 40px rgba(0,255,65,0.4), inset 0 0 30px rgba(0,255,65,0.06); } }
+      .status-line { display: flex; justify-content: space-between; padding: 6px 0; border-bottom: 1px solid rgba(0,255,65,0.15); font-size: 0.85rem; }
+      .status-line:last-child { border-bottom: none; }
+      .label { color: #888; }
+      .value { color: #00ff41; text-shadow: 0 0 8px #00ff41; }
+      .value.cyan { color: #00cfff; text-shadow: 0 0 8px #00cfff; }
+      .value.pink { color: #ff0080; text-shadow: 0 0 8px #ff0080; }
+      .value.online { color: #00ff41; animation: blink 1.5s step-end infinite; }
+      @keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: 0; } }
+      .terminal { width: 100%; max-width: 90vw; min-width: 500px; font-size: 0.8rem; color: #00ff41; opacity: 0.8; height: 5em; overflow: hidden; }
+      .terminal-line { white-space: nowrap; overflow: hidden; animation: typing 0.5s steps(60) forwards; opacity: 0; }
+      @keyframes typing { from { width: 0; opacity: 1; } to { width: 100%; opacity: 1; } }
+      .corner-deco { position: fixed; width: 60px; height: 60px; z-index: 5; opacity: 0.6; }
+      .corner-deco.tl { top: 20px; left: 20px; border-top: 2px solid #00ff41; border-left: 2px solid #00ff41; }
+      .corner-deco.tr { top: 20px; right: 20px; border-top: 2px solid #00ff41; border-right: 2px solid #00ff41; }
+      .corner-deco.bl { bottom: 20px; left: 20px; border-bottom: 2px solid #00ff41; border-left: 2px solid #00ff41; }
+      .corner-deco.br { bottom: 20px; right: 20px; border-bottom: 2px solid #00ff41; border-right: 2px solid #00ff41; }
+      .scan-line { position: fixed; top: 0; left: 0; right: 0; height: 3px; background: linear-gradient(90deg, transparent, #00ff41, transparent); z-index: 20; animation: scan 4s linear infinite; opacity: 0.4; }
+      @keyframes scan { 0% { top: 0; } 100% { top: 100vh; } }
+      .node-id { font-size: 0.65rem; color: #333; letter-spacing: 0.2em; margin-top: 10px; }
+    </style>
+    </head>
+    <body>
+    <canvas id="matrix-canvas"></canvas>
+    <div class="scan-line"></div>
+    <div class="corner-deco tl"></div>
+    <div class="corner-deco tr"></div>
+    <div class="corner-deco bl"></div>
+    <div class="corner-deco br"></div>
+    <div class="container">
+      <div class="glitch-title">SkyNet Labs</div>
+      <div class="subtitle">// Swiss OTC · RKE2 Node · Cloud Controller Active //</div>
+      <div class="panel">
+        <div class="status-line"><span class="label">CLUSTER</span><span class="value">rke2-dev · v1.34.5+rke2r1</span></div>
+        <div class="status-line"><span class="label">PROVIDER</span><span class="value cyan">Swiss OTC · eu-ch2a</span></div>
+        <div class="status-line"><span class="label">CLOUD CONTROLLER</span><span class="value online">● ONLINE</span></div>
+        <div class="status-line"><span class="label">ELB ENDPOINT</span><span class="value pink">138.124.232.48</span></div>
+        <div class="status-line"><span class="label">NODES</span><span class="value">3 · READY</span></div>
+        <div class="status-line"><span class="label">CNI</span><span class="value cyan">Cilium</span></div>
+        <div class="status-line"><span class="label">PIPELINE</span><span class="value">GitHub Actions · completed/success ✓</span></div>
+      </div>
+      <div class="terminal" id="terminal"></div>
+      <div class="node-id" id="uptime">INITIALIZING...</div>
+    </div>
+    <script>
+    const canvas = document.getElementById('matrix-canvas');
+    const ctx = canvas.getContext('2d');
+    canvas.width = window.innerWidth; canvas.height = window.innerHeight;
+    const cols = Math.floor(canvas.width / 20);
+    const drops = Array(cols).fill(1);
+    const chars = 'アイウエオカキクケコサシスセソタチツテトナニヌネノ0123456789ABCDEF<>{}[]|/\\';
+    function drawMatrix() {
+      ctx.fillStyle = 'rgba(0,0,0,0.05)'; ctx.fillRect(0,0,canvas.width,canvas.height);
+      drops.forEach((y,i) => {
+        const char = chars[Math.floor(Math.random()*chars.length)];
+        ctx.fillStyle = Math.random()>0.95 ? '#ffffff' : '#00ff41';
+        ctx.font = '15px Share Tech Mono'; ctx.fillText(char, i*20, y*20);
+        if (y*20 > canvas.height && Math.random()>0.975) drops[i]=0; drops[i]++;
+      });
+    }
+    setInterval(drawMatrix, 45);
+    window.addEventListener('resize', () => { canvas.width=window.innerWidth; canvas.height=window.innerHeight; });
+    const lines = [
+      '> kubectl get svc demo-lb -n default',
+      '  NAME      TYPE          EXTERNAL-IP      PORT(S)',
+      '  demo-lb   LoadBalancer  138.124.232.48   80/TCP   ✓',
+      '> otc_ccm: ELB provisioned in 23s · EIP bound · all systems nominal',
+      '> connection established · welcome to the grid //',
+    ];
+    let lineIdx = 0;
+    const term = document.getElementById('terminal');
+    function addLine() {
+      if (lineIdx >= lines.length) lineIdx = 0;
+      const el = document.createElement('div'); el.className = 'terminal-line';
+      el.textContent = lines[lineIdx++];
+      el.style.animationDuration = `${0.03*lines[lineIdx-1].length+0.2}s`;
+      term.appendChild(el);
+      if (term.children.length > 5) term.removeChild(term.children[0]);
+      setTimeout(addLine, 1800);
+    }
+    setTimeout(addLine, 800);
+    const start = Date.now();
+    setInterval(() => {
+      const s = Math.floor((Date.now()-start)/1000);
+      const h = String(Math.floor(s/3600)).padStart(2,'0');
+      const m = String(Math.floor((s%3600)/60)).padStart(2,'0');
+      const sec = String(s%60).padStart(2,'0');
+      document.getElementById('uptime').textContent = `SESSION UPTIME: ${h}:${m}:${sec}  ·  NODE: rke2-dev-master  ·  ${new Date().toISOString()}`;
+    }, 1000);
+    </script>
+    </body>
+    </html>
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: demo-app
+  namespace: default
+  labels:
+    app: demo
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: demo
+  template:
+    metadata:
+      labels:
+        app: demo
+    spec:
+      containers:
+      - name: nginx
+        image: nginx:alpine
+        ports:
+        - containerPort: 80
+        volumeMounts:
+        - name: html
+          mountPath: /usr/share/nginx/html
+      volumes:
+      - name: html
+        configMap:
+          name: demo-html
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: demo-lb
+  namespace: default
+  annotations:
+    otc.io/eip-bandwidth: "5"
+    otc.io/elb-virsubnet-id: "a54d6a42-b021-476a-a670-7578c915ed8e"
+spec:
+  type: LoadBalancer
+  selector:
+    app: demo
+  ports:
+  - port: 80
+    targetPort: 80
