@@ -231,6 +231,47 @@ jobs:
           kubectl --insecure-skip-tls-verify get pods -n kube-system \
             -l app.kubernetes.io/name=swiss-otc-ccm
 
+
+      # ── Deploy Cinder CSI (EVS Storage) ─────────────────
+      - name: Deploy Cinder CSI (EVS PVC Support)
+        env:
+          OTC_AK:         ${{ secrets.OTC_ACCESS_KEY }}
+          OTC_SK:         ${{ secrets.OTC_SECRET_KEY }}
+          OTC_PROJECT_ID: ${{ secrets.OTC_PROJECT_ID }}
+        run: |
+          # cloud.conf als Kubernetes Secret erstellen (INI format)
+          cat > /tmp/cinder-cloud.conf << CLOUDEOF
+          [Global]
+          auth-url=https://iam-pub.eu-ch2.sc.otc.t-systems.com/v3
+          region=eu-ch2
+          access-key=${OTC_AK}
+          secret-key=${OTC_SK}
+          project-id=${OTC_PROJECT_ID}
+          CLOUDEOF
+
+          kubectl --insecure-skip-tls-verify create secret generic cinder-csi-cloud-config \
+            --namespace kube-system \
+            --from-file=cloud.conf=/tmp/cinder-cloud.conf \
+            --dry-run=client -o yaml | kubectl --insecure-skip-tls-verify apply -f -
+
+          helm repo add cpo https://kubernetes.github.io/cloud-provider-openstack
+          helm repo update
+
+          helm upgrade --install cinder-csi cpo/openstack-cinder-csi \
+            --namespace kube-system \
+            --version 2.35.0 \
+            -f deploy/helm/cinder-csi/values.yaml \
+            --set secret.create=false \
+            --set secret.enabled=true \
+            --set secret.name=cinder-csi-cloud-config \
+            --insecure-skip-tls-verify \
+            --wait --timeout=5m
+
+          echo "✅ Cinder CSI deployed"
+          kubectl --insecure-skip-tls-verify get pods -n kube-system \
+            -l app=openstack-cinder-csi
+          kubectl --insecure-skip-tls-verify get sc
+
       # ── Deploy Demo App + wait for ELB ─────────────────
       - name: Deploy Demo App
         run: |
