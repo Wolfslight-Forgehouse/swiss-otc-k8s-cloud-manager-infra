@@ -12,6 +12,7 @@ terraform {
 provider "opentelekomcloud" {
   access_key  = var.access_key
   secret_key  = var.secret_key
+  domain_name = var.domain_name
   tenant_id   = var.project_id
   auth_url    = "https://iam-pub.eu-ch2.sc.otc.t-systems.com/v3"
   region      = "eu-ch2"
