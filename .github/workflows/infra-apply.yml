@@ -13,7 +13,6 @@ jobs:
   apply:
     name: "Terraform Apply"
     runs-on: ubuntu-latest
-    environment: production
     if: github.event.inputs.confirm == 'APPLY'
     env:
       TF_VAR_access_key: ${{ secrets.OTC_ACCESS_KEY }}
