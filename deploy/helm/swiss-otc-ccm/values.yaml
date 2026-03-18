@@ -21,6 +21,8 @@ cloudConfig:
     authUrl: https://iam-pub.eu-ch2.sc.otc.t-systems.com/v3
     username: ""
     password: ""
+    accessKey: ""
+    secretKey: ""
     projectName: ""
     projectId: ""
     userDomainName: ""

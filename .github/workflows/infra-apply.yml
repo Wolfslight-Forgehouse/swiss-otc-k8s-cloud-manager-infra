@@ -215,13 +215,13 @@ jobs:
 
           helm upgrade --install swiss-otc-ccm deploy/helm/swiss-otc-ccm/ \
             --namespace kube-system \
-            --set config.auth.access_key="$OTC_AK" \
-            --set config.auth.secret_key="$OTC_SK" \
-            --set config.auth.project_id="$OTC_PROJECT_ID" \
-            --set config.network.vpc_id="$VPC_ID" \
-            --set config.network.subnet_id="$SUBNET_ID" \
-            --set config.network.network_id="$NETWORK_ID" \
-            --set config.loadbalancer.availability_zones[0]="eu-ch2a" \
+            --set cloudConfig.auth.accessKey="$OTC_AK" \
+            --set cloudConfig.auth.secretKey="$OTC_SK" \
+            --set cloudConfig.auth.projectId="$OTC_PROJECT_ID" \
+            --set cloudConfig.network.vpcId="$VPC_ID" \
+            --set cloudConfig.network.subnetId="$SUBNET_ID" \
+            --set cloudConfig.network.networkId="$NETWORK_ID" \
+            --set cloudConfig.loadbalancer.availabilityZones[0]="eu-ch2a" \
             --set imagePullSecrets[0].name=ghcr-pull-secret \
             --insecure-skip-tls-verify \
             --wait --timeout=10m
