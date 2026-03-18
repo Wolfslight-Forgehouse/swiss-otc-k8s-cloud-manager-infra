@@ -13,8 +13,11 @@ jobs:
   apply:
     name: "Terraform Apply"
     runs-on: ubuntu-latest
+    environment: production
     if: github.event.inputs.confirm == 'APPLY'
     env:
+      AWS_ACCESS_KEY_ID: ${{ secrets.OTC_ACCESS_KEY }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.OTC_SECRET_KEY }}
       TF_VAR_access_key: ${{ secrets.OTC_ACCESS_KEY }}
       TF_VAR_secret_key: ${{ secrets.OTC_SECRET_KEY }}
       TF_VAR_project_id: ${{ secrets.OTC_PROJECT_ID }}
@@ -22,8 +25,8 @@ jobs:
       TF_VAR_ssh_private_key: ${{ secrets.SSH_PRIVATE_KEY }}
       TF_VAR_rke2_token: ${{ secrets.RKE2_TOKEN }}
       TF_VAR_ghcr_pull_token: ${{ secrets.GHCR_PULL_TOKEN }}
-      TF_VAR_domain_name: ${{ secrets.OTC_DOMAIN_NAME }}
-      TF_VAR_project_name: ${{ secrets.OTC_PROJECT_NAME }}
+      TF_VAR_domain_name: ""
+      TF_VAR_project_name: ""
       TF_VAR_github_runner_token: ""
       TF_VAR_gitlab_url: ""
       TF_VAR_gitlab_runner_token: ""
@@ -52,25 +55,25 @@ jobs:
         id: tf-apply
         run: |
           terraform apply -auto-approve -no-color
-          echo "master_ip=$(terraform output -raw master_ip)"         >> $GITHUB_OUTPUT
-          echo "bastion_ip=$(terraform output -raw bastion_ip)"       >> $GITHUB_OUTPUT
+          echo "master_ip=$(terraform output -raw master_ip)"               >> $GITHUB_OUTPUT
+          echo "bastion_ip=$(terraform output -raw bastion_ip)"             >> $GITHUB_OUTPUT
           echo "bastion_private_ip=$(terraform output -raw bastion_private_ip)" >> $GITHUB_OUTPUT
-          echo "vpc_id=$(terraform output -raw vpc_id)"               >> $GITHUB_OUTPUT
-          echo "subnet_id=$(terraform output -raw subnet_id)"         >> $GITHUB_OUTPUT
-          echo "subnet_network_id=$(terraform output -raw subnet_network_id)" >> $GITHUB_OUTPUT
-          echo "security_group_id=$(terraform output -raw security_group_id)" >> $GITHUB_OUTPUT
+          echo "vpc_id=$(terraform output -raw vpc_id)"                     >> $GITHUB_OUTPUT
+          echo "subnet_id=$(terraform output -raw subnet_id)"               >> $GITHUB_OUTPUT
+          echo "subnet_network_id=$(terraform output -raw subnet_network_id)"   >> $GITHUB_OUTPUT
+          echo "security_group_id=$(terraform output -raw security_group_id)"   >> $GITHUB_OUTPUT
 
     outputs:
-      master_ip:         ${{ steps.tf-apply.outputs.master_ip }}
-      bastion_ip:        ${{ steps.tf-apply.outputs.bastion_ip }}
+      master_ip:          ${{ steps.tf-apply.outputs.master_ip }}
+      bastion_ip:         ${{ steps.tf-apply.outputs.bastion_ip }}
       bastion_private_ip: ${{ steps.tf-apply.outputs.bastion_private_ip }}
-      vpc_id:            ${{ steps.tf-apply.outputs.vpc_id }}
-      subnet_id:         ${{ steps.tf-apply.outputs.subnet_id }}
-      subnet_network_id: ${{ steps.tf-apply.outputs.subnet_network_id }}
-      security_group_id: ${{ steps.tf-apply.outputs.security_group_id }}
+      vpc_id:             ${{ steps.tf-apply.outputs.vpc_id }}
+      subnet_id:          ${{ steps.tf-apply.outputs.subnet_id }}
+      subnet_network_id:  ${{ steps.tf-apply.outputs.subnet_network_id }}
+      security_group_id:  ${{ steps.tf-apply.outputs.security_group_id }}
 
   post-apply:
-    name: "Post-Apply: kubeconfig + CCM deploy"
+    name: "Post-Apply: kubeconfig + CCM + Demo App"
     needs: apply
     runs-on: ubuntu-latest
     if: success()
@@ -80,28 +83,26 @@ jobs:
       VPC_ID:      ${{ needs.apply.outputs.vpc_id }}
       SUBNET_ID:   ${{ needs.apply.outputs.subnet_network_id }}
       NETWORK_ID:  ${{ needs.apply.outputs.subnet_id }}
-      SG_ID:       ${{ needs.apply.outputs.security_group_id }}
 
     steps:
       - uses: actions/checkout@v4
 
-      - name: Setup SSH key
+      - name: Setup SSH
         run: |
           mkdir -p ~/.ssh
           echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/rke2-key
           chmod 600 ~/.ssh/rke2-key
-          ssh-keyscan -H "$BASTION_IP" >> ~/.ssh/known_hosts 2>/dev/null || true
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
 
-      - name: Wait for RKE2 master ready
+      - name: Wait for RKE2 master
         run: |
-          echo "⏳ Warte auf RKE2 master via bastion ($BASTION_IP → $MASTER_IP)..."
+          echo "⏳ Warte auf RKE2 master ($MASTER_IP via $BASTION_IP)..."
           for i in $(seq 1 40); do
             if ssh -o StrictHostKeyChecking=no -o ConnectTimeout=5 \
-                -i ~/.ssh/rke2-key \
-                -J ubuntu@$BASTION_IP \
-                ubuntu@$MASTER_IP \
+                -i ~/.ssh/rke2-key -J ubuntu@$BASTION_IP ubuntu@$MASTER_IP \
                 'sudo systemctl is-active rke2-server' 2>/dev/null | grep -q "^active$"; then
-              echo "✅ RKE2 is active"
+              echo "✅ RKE2 aktiv"
               break
             fi
             echo "  Attempt $i/40 — 15s..."
@@ -110,18 +111,14 @@ jobs:
 
       - name: Fetch kubeconfig
         run: |
-          ssh -o StrictHostKeyChecking=no \
-            -i ~/.ssh/rke2-key \
-            -J ubuntu@$BASTION_IP \
-            ubuntu@$MASTER_IP \
+          ssh -o StrictHostKeyChecking=no -i ~/.ssh/rke2-key \
+            -J ubuntu@$BASTION_IP ubuntu@$MASTER_IP \
             'sudo cat /etc/rancher/rke2/rke2.yaml' | \
             sed "s/127.0.0.1/$MASTER_IP/g" > /tmp/kubeconfig
-          echo "✅ kubeconfig fetched"
-          export KUBECONFIG=/tmp/kubeconfig
-          kubectl --insecure-skip-tls-verify get nodes
+          echo "KUBECONFIG=/tmp/kubeconfig" >> $GITHUB_ENV
+          kubectl --insecure-skip-tls-verify get nodes -o wide
 
-      - name: Install Helm
-        uses: azure/setup-helm@v3
+      - uses: azure/setup-helm@v3
         with:
           version: "3.14.0"
 
@@ -131,53 +128,28 @@ jobs:
           OTC_SK: ${{ secrets.OTC_SECRET_KEY }}
           OTC_PROJECT_ID: ${{ secrets.OTC_PROJECT_ID }}
         run: |
-          export KUBECONFIG=/tmp/kubeconfig
-
-          # cloud.conf generieren
-          cat > /tmp/cloud.conf << CLOUDEOF
-          auth:
-            access_key: "${OTC_AK}"
-            secret_key: "${OTC_SK}"
-            project_id: "${OTC_PROJECT_ID}"
-          region: "eu-ch2"
-          network:
-            vpc_id: "${VPC_ID}"
-            subnet_id: "${SUBNET_ID}"
-            network_id: "${NETWORK_ID}"
-          loadbalancer:
-            availability_zones:
-              - "eu-ch2a"
-            subnet_id: "${SUBNET_ID}"
-            network_id: "${NETWORK_ID}"
-          CLOUDEOF
-          sed -i 's/^          //' /tmp/cloud.conf
-
-          # CCM deployen
           helm upgrade --install swiss-otc-ccm deploy/helm/swiss-otc-ccm/ \
             --namespace kube-system \
-            --set config.auth.access_key="${OTC_AK}" \
-            --set config.auth.secret_key="${OTC_SK}" \
-            --set config.auth.project_id="${OTC_PROJECT_ID}" \
-            --set config.network.vpc_id="${VPC_ID}" \
-            --set config.network.subnet_id="${SUBNET_ID}" \
-            --set config.network.network_id="${NETWORK_ID}" \
+            --set config.auth.access_key="$OTC_AK" \
+            --set config.auth.secret_key="$OTC_SK" \
+            --set config.auth.project_id="$OTC_PROJECT_ID" \
+            --set config.network.vpc_id="$VPC_ID" \
+            --set config.network.subnet_id="$SUBNET_ID" \
+            --set config.network.network_id="$NETWORK_ID" \
             --set config.loadbalancer.availability_zones[0]="eu-ch2a" \
             --insecure-skip-tls-verify \
             --wait --timeout=5m
-          echo "✅ Cloud Manager deployed"
           kubectl --insecure-skip-tls-verify get pods -n kube-system -l app.kubernetes.io/name=swiss-otc-ccm
 
-      - name: Deploy Demo App
+      - name: Deploy + Screenshot Demo App
         run: |
-          export KUBECONFIG=/tmp/kubeconfig
           kubectl --insecure-skip-tls-verify apply -f examples/kubernetes/test-loadbalancer-service.yaml
-
-          echo "⏳ Warte auf External-IP (ELB)..."
+          echo "⏳ Warte auf ELB External-IP..."
           for i in $(seq 1 36); do
             EXT_IP=$(kubectl --insecure-skip-tls-verify get svc -A \
               -o jsonpath='{.items[?(@.spec.type=="LoadBalancer")].status.loadBalancer.ingress[0].ip}' 2>/dev/null)
             if [ -n "$EXT_IP" ]; then
-              echo "✅ External IP: $EXT_IP"
+              echo "✅ ELB IP: $EXT_IP"
               echo "ELB_IP=$EXT_IP" >> $GITHUB_ENV
               break
             fi
@@ -185,29 +157,25 @@ jobs:
             sleep 10
           done
 
-      - name: Smoke Test Demo App
+      - name: Smoke Test
         if: env.ELB_IP != ''
         run: |
-          echo "🌐 HTTP Test gegen $ELB_IP..."
           for i in $(seq 1 12); do
-            HTTP=$(curl -s -o /dev/null -w "%{http_code}" --max-time 5 "http://$ELB_IP" || echo "000")
-            if [ "$HTTP" = "200" ]; then
-              echo "✅ HTTP 200 — Demo App erreichbar!"
-              curl -s "http://$ELB_IP" | head -5
-              break
-            fi
-            echo "  HTTP $HTTP — retry $i/12..."
+            HTTP=$(curl -s -o /tmp/response.html -w "%{http_code}" --max-time 5 "http://$ELB_IP" || echo "000")
+            echo "HTTP $HTTP"
+            [ "$HTTP" = "200" ] && break
             sleep 10
           done
+          cat /tmp/response.html | head -5
 
       - name: Summary
         if: always()
         run: |
-          echo "## 🚀 E2E Deployment Summary" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "| Resource | Value |" >> $GITHUB_STEP_SUMMARY
-          echo "|---|---|" >> $GITHUB_STEP_SUMMARY
-          echo "| Bastion IP | \`$BASTION_IP\` |" >> $GITHUB_STEP_SUMMARY
-          echo "| Master IP | \`$MASTER_IP\` |" >> $GITHUB_STEP_SUMMARY
-          echo "| VPC ID | \`$VPC_ID\` |" >> $GITHUB_STEP_SUMMARY
-          echo "| Demo App ELB | \`${ELB_IP:-pending}\` |" >> $GITHUB_STEP_SUMMARY
+          {
+            echo "## 🚀 E2E Deployment"
+            echo "| Resource | Value |"
+            echo "|---|---|"
+            echo "| Bastion IP | \`$BASTION_IP\` |"
+            echo "| Master IP | \`$MASTER_IP\` |"
+            echo "| Demo App ELB | \`${ELB_IP:-pending}\` |"
+          } >> $GITHUB_STEP_SUMMARY
