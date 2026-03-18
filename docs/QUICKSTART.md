@@ -1,116 +1,121 @@
-# Quick Start Guide
+# Quick Start — RKE2 auf Swiss OTC aufbauen
 
-Deploy a cloud-native RKE2 Kubernetes cluster on Swiss Open Telekom Cloud with automated LoadBalancer provisioning.
+## Voraussetzungen
 
-## Prerequisites
+- Swiss OTC Account mit `eu-ch2` Zugriff
+- IAM User mit AK/SK Credentials und folgenden Permissions:
+  - `ELB FullAccess`, `VPC FullAccess`, `ECS FullAccess`
+  - `OBS OperateAccess` (für Terraform State)
+  - `EVS FullAccess` (für Block Storage)
+- GitHub Account mit Zugriff auf dieses Repo
+- GitHub Actions aktiviert
 
-- Swiss OTC account with `eu-ch2` region access
-- IAM user with AK/SK credentials and permissions:
-  - `ELB FullAccess`
-  - `VPC FullAccess`
-  - `ECS FullAccess`
-  - `OBS FullAccess` (for Terraform state)
-- GitHub repository (or GitLab) with CI/CD enabled
-- SSH key pair for VM access
+## Schritt 1: GitHub Secrets setzen
 
-## Step 1: Configure Terraform State Backend
+Unter `Settings → Secrets → Actions → New repository secret`:
 
-Create an OBS bucket for Terraform remote state:
+```
+OTC_ACCESS_KEY       → AK aus OTC IAM
+OTC_SECRET_KEY       → SK aus OTC IAM
+OTC_PROJECT_ID       → Project ID (eu-ch2_...)
+OTC_USERNAME         → IAM Username
+OTC_PASSWORD         → IAM Password
+OTC_DOMAIN_NAME      → OTC Domain (OTC000000000010000...)
+RKE2_TOKEN           → beliebiger sicherer String (z.B. openssl rand -hex 32)
+SSH_PRIVATE_KEY      → Ed25519 Private Key
+SSH_PUBLIC_KEY       → Ed25519 Public Key
+GHCR_PULL_TOKEN      → GitHub Classic PAT (read:packages)
+GH_PAT               → GitHub Classic PAT (repo + workflow + write:packages)
+```
+
+Und unter `Settings → Environments → production` dieselben Secrets auch als **Environment Secrets** setzen.
+
+## Schritt 2: OBS Bucket für Terraform State
+
+Im OTC Console unter Storage → OBS → Bucket erstellen:
+- Name: `rke2-sotc-tfstate`
+- Region: `eu-ch2`
+- Versioning: aktiviert
+
+## Schritt 3: CCM Image bauen
+
+```
+GitHub Actions → ccm-build.yml → Run workflow
+```
+
+Das baut und pushed `ghcr.io/<org>/swiss-otc-cloud-controller-manager:latest`.
+
+## Schritt 4: Cluster aufbauen
+
+```
+GitHub Actions → infra-apply.yml → Run workflow → confirm: APPLY
+```
+
+Die Pipeline:
+1. Terraform erstellt: VPC, Subnets, Security Groups, Bastion, Master, Worker
+2. Wartet bis RKE2 bereit ist
+3. Deployed OTC CCM (Helm)
+4. Deployed Cinder CSI (Helm)
+5. Deployed Demo App (kubectl)
+6. Wartet auf ELB External-IP
+7. HTTP Smoke Test
+
+**Dauer**: ca. 8-12 Minuten.
+
+## Schritt 5: Cluster verifizieren
 
 ```bash
-# Via OTC Console: Storage → OBS → Create Bucket
-# Name: your-tfstate-bucket
-# Region: eu-ch2
-# Versioning: Enabled
+# SSH-Tunnel aufbauen
+ssh -L 16443:<MASTER_IP>:6443 ubuntu@<BASTION_IP> -N &
+
+# kubeconfig holen
+ssh -J ubuntu@<BASTION_IP> ubuntu@<MASTER_IP> \
+  "sudo cat /etc/rancher/rke2/rke2.yaml" > rke2.yaml
+sed -i 's|https://127.0.0.1:6443|https://localhost:16443|g' rke2.yaml
+
+# Nodes prüfen
+kubectl --kubeconfig rke2.yaml --insecure-skip-tls-verify get nodes
+
+# StorageClasses prüfen
+kubectl --kubeconfig rke2.yaml --insecure-skip-tls-verify get sc
+
+# Demo App
+curl http://<ELB_IP>
 ```
 
-Update `terraform/environments/dev/backend.tf` with your bucket name.
+## Schritt 6: Cluster abbauen
 
-## Step 2: Set CI/CD Secrets
-
-### GitHub Actions
-
-Go to Settings → Secrets and variables → Actions:
-
-| Secret | Value |
-|---|---|
-| `OTC_ACCESS_KEY` | Your AK |
-| `OTC_SECRET_KEY` | Your SK |
-| `OTC_PROJECT_ID` | Your project ID |
-| `SSH_PUBLIC_KEY` | Your SSH public key |
-| `SSH_PRIVATE_KEY` | Your SSH private key |
-| `RKE2_TOKEN` | `openssl rand -hex 32` |
-| `GH_PAT` | GitHub PAT (for runner registration) |
-| `GHCR_PULL_TOKEN` | GitHub PAT with `read:packages` |
-
-### GitLab CI
-
-Go to Settings → CI/CD → Variables and set the same values.
-
-## Step 3: Deploy Infrastructure
-
-```bash
-# Trigger via GitHub Actions UI:
-# Actions → Terraform Apply → Run workflow → Type "APPLY"
+```
+GitHub Actions → infra-destroy-v2.yml → Run workflow → confirm: DESTROY
 ```
 
-This creates:
-- VPC + Subnet + Security Groups
-- Bastion host (with kubectl, helm, CI runner)
-- RKE2 master + 2 workers
-- Post-apply: kubeconfig, K8s secrets, taint removal
+Räumt automatisch ELBs auf bevor Terraform destroy läuft.
 
-## Step 4: Build & Deploy CCM
+---
 
-```bash
-# Build container image:
-# Actions → CCM Build & Push → Run workflow
+## Typische Fehler & Lösungen
 
-# Deploy to cluster:
-# Actions → CCM Deploy (Helm) → Run workflow → dry_run: false
+### CCM: `ImagePullBackOff`
+```
+GHCR_PULL_TOKEN Secret fehlt oder hat falschen Scope.
+→ Classic PAT mit read:packages erstellen und als Secret setzen.
 ```
 
-## Step 5: Test
-
-```yaml
-# Apply a LoadBalancer service:
-apiVersion: v1
-kind: Service
-metadata:
-  name: my-app
-  annotations:
-    otc.io/eip-bandwidth: "10"  # Public IP with 10 Mbit/s
-spec:
-  type: LoadBalancer
-  ports:
-  - port: 80
-    targetPort: 80
-  selector:
-    app: my-app
+### CCM: `yaml unmarshal errors`
+```
+cloud.conf hat falsches Format.
+→ Helm --set für availabilityZones entfernen (default aus values.yaml reicht).
 ```
 
-The CCM will automatically:
-1. Create an ELB v3 Dedicated load balancer
-2. Bind an Elastic IP (if annotated)
-3. Configure listeners, pools, and health monitors
-4. Update security group rules
-5. Patch the service with the external IP
-
-## Step 6: Destroy (Cleanup)
-
-```bash
-# Actions → Terraform Destroy → Run workflow → Type "DESTROY"
-# Pre-destroy job automatically cleans up ELBs before removing infrastructure
+### Cinder CSI: `You must provide a password`
+```
+AK/SK funktioniert nicht für openstack-cinder-csi.
+→ OTC_USERNAME / OTC_PASSWORD verwenden (Keystone Auth).
 ```
 
-## Architecture
-
-See [docs/ARCHITECTURE.md](ARCHITECTURE.md) for detailed diagrams.
-
-## Customization
-
-| File | Purpose |
-|---|---|
-| `terraform/environments/dev/main.tf` | Cluster size, flavors, CIDRs |
-| `deploy/helm/swiss-otc-ccm/values.yaml` | CCM config, replicas, logging |
-| `terraform.tfvars` | Your environment-specific values |
+### Terraform Destroy: `subnet still in use`
+```
+ELB blockiert Subnet-Deletion.
+→ infra-destroy führt Pre-Destroy aus (kubectl delete svc).
+→ Falls manuell: OTC Console → ELB löschen, dann destroy.
+```
