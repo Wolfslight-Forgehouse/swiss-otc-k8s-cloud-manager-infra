@@ -214,7 +214,7 @@ jobs:
             --set config.network.network_id="$NETWORK_ID" \
             --set config.loadbalancer.availability_zones[0]="eu-ch2a" \
             --insecure-skip-tls-verify \
-            --wait --timeout=5m
+            --wait --timeout=10m
           echo "✅ Cloud Manager deployed"
           kubectl --insecure-skip-tls-verify get pods -n kube-system \
             -l app.kubernetes.io/name=swiss-otc-ccm
