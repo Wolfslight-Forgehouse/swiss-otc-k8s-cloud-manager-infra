@@ -168,17 +168,30 @@ jobs:
           $READY || { echo "❌ RKE2 master never became active"; exit 1; }
           echo "✅ RKE2 master is active"
 
-      # ── Fetch kubeconfig ───────────────────────────────
-      - name: Fetch kubeconfig
+      # ── Fetch kubeconfig + SSH tunnel ─────────────────
+      # The Kubernetes API (6443) is only reachable inside the OTC VPC.
+      # We open a local SSH tunnel: localhost:6443 → MASTER_IP:6443 via Bastion
+      # and rewrite the kubeconfig server URL to use 127.0.0.1.
+      - name: Fetch kubeconfig + open API tunnel
         run: |
+          # Fetch raw kubeconfig from master
           ssh -F ~/.ssh/config ubuntu@$MASTER_IP \
             'sudo cat /etc/rancher/rke2/rke2.yaml' \
-            | sed "s/127\.0\.0\.1/$MASTER_IP/g" \
+            | sed "s|server: https://127\.0\.0\.1:6443|server: https://127.0.0.1:6443|g" \
             > /tmp/kubeconfig
           chmod 600 /tmp/kubeconfig
+
+          # Open persistent SSH tunnel: localhost:6443 → master:6443 via bastion
+          ssh -F ~/.ssh/config \
+            -L 6443:${MASTER_IP}:6443 \
+            -N -f -o ExitOnForwardFailure=yes \
+            ubuntu@$BASTION_IP
+          sleep 3
+          echo "✅ SSH tunnel localhost:6443 → $MASTER_IP:6443 established"
+
+          # Verify connectivity
+          KUBECONFIG=/tmp/kubeconfig kubectl --insecure-skip-tls-verify get nodes -o wide
           echo "KUBECONFIG=/tmp/kubeconfig" >> $GITHUB_ENV
-          echo "✅ kubeconfig fetched"
-          kubectl --insecure-skip-tls-verify get nodes -o wide
 
       # ── Deploy Cloud Manager ───────────────────────────
       - uses: azure/setup-helm@v3
