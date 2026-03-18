@@ -203,7 +203,7 @@ jobs:
           OTC_AK:          ${{ secrets.OTC_ACCESS_KEY }}
           OTC_SK:          ${{ secrets.OTC_SECRET_KEY }}
           OTC_PROJECT_ID:  ${{ secrets.OTC_PROJECT_ID }}
-          GHCR_PAT:        ${{ secrets.GH_PAT }}
+          GHCR_PAT:        ${{ secrets.GHCR_PULL_TOKEN }}
         run: |
           # Create imagePullSecret for private GHCR package
           kubectl --insecure-skip-tls-verify create secret docker-registry ghcr-pull-secret \
