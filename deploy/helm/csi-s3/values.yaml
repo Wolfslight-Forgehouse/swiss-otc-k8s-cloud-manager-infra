@@ -1,0 +1,29 @@
+# csi-s3 (GeeseFS) — Swiss OTC OBS
+# Source: https://github.com/yandex-cloud/k8s-csi-s3
+# Image: self-built + pushed to GHCR (Yandex CR requires auth)
+
+images:
+  registrar: registry.k8s.io/sig-storage/csi-node-driver-registrar:v2.11.1
+  provisioner: registry.k8s.io/sig-storage/csi-provisioner:v5.1.0
+  csi: ghcr.io/wolfslight-forgehouse/csi-s3-driver:latest
+
+storageClass:
+  create: true
+  name: csi-obs
+  singleBucket: ""
+  mounter: geesefs
+  mountOptions: "--memory-limit 1000 --dir-mode 0777 --file-mode 0666"
+  reclaimPolicy: Delete
+  annotations: {}
+
+secret:
+  create: true
+  name: csi-s3-secret
+  # Werden via pipeline --set überschrieben
+  accessKey: ""
+  secretKey: ""
+  endpoint: https://obs.eu-ch2.sc.otc.t-systems.com
+  region: eu-ch2
+
+# RKE2 kubelet path
+kubeletPath: /var/lib/kubelet

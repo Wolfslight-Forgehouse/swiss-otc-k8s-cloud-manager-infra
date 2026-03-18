@@ -1,0 +1,55 @@
+name: Build & Push csi-s3
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'csi-s3 version tag (e.g. v0.43.4)'
+        default: 'v0.43.4'
+        required: true
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  build:
+    name: Build csi-s3 image
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout csi-s3 source
+        uses: actions/checkout@v4
+        with:
+          repository: yandex-cloud/k8s-csi-s3
+          ref: ${{ inputs.version }}
+          path: csi-s3-src
+
+      - name: Login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GH_PAT }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build & Push csi-s3
+        uses: docker/build-push-action@v6
+        with:
+          context: csi-s3-src
+          push: true
+          tags: |
+            ghcr.io/${{ github.repository_owner }}/csi-s3-driver:${{ inputs.version }}
+            ghcr.io/${{ github.repository_owner }}/csi-s3-driver:latest
+          platforms: linux/amd64,linux/arm64
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Summary
+        run: |
+          echo "## ✅ csi-s3 image built & pushed" >> $GITHUB_STEP_SUMMARY
+          echo "Image: \`ghcr.io/${{ github.repository_owner }}/csi-s3-driver:${{ inputs.version }}\`" >> $GITHUB_STEP_SUMMARY
