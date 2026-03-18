@@ -1,4 +1,5 @@
 name: "Terraform Destroy"
+
 on:
   workflow_dispatch:
     inputs:
@@ -13,7 +14,6 @@ jobs:
   destroy:
     name: "Terraform Destroy"
     runs-on: ubuntu-latest
-    if: github.event.inputs.confirm == 'DESTROY'
     env:
       AWS_ACCESS_KEY_ID: ${{ secrets.OTC_ACCESS_KEY }}
       AWS_SECRET_ACCESS_KEY: ${{ secrets.OTC_SECRET_KEY }}
@@ -37,43 +37,6 @@ jobs:
         with:
           ssh-private-key: ${{ secrets.SSH_PRIVATE_KEY }}
 
-      - name: Get Bastion IP from TF State
-        id: bastion
-        run: |
-          pip install awscli --quiet 2>/dev/null || true
-          terraform init -input=false
-          BASTION_IP=$(terraform output -raw bastion_public_ip 2>/dev/null || echo "")
-          MASTER_IP=$(terraform output -raw master_private_ip 2>/dev/null || echo "")
-          echo "bastion_ip=$BASTION_IP" >> $GITHUB_OUTPUT
-          echo "master_ip=$MASTER_IP" >> $GITHUB_OUTPUT
-          echo "Bastion: $BASTION_IP | Master: $MASTER_IP"
-
-      - name: Pre-Destroy: Clean ELBs via kubectl
-        if: steps.bastion.outputs.bastion_ip != ''
-        continue-on-error: true
-        env:
-          BASTION_IP: ${{ steps.bastion.outputs.bastion_ip }}
-          MASTER_IP: ${{ steps.bastion.outputs.master_ip }}
-        run: |
-          echo "${{ secrets.SSH_PRIVATE_KEY }}" > /tmp/master-key && chmod 600 /tmp/master-key
-          ssh-keyscan -H $BASTION_IP >> ~/.ssh/known_hosts 2>/dev/null
-
-          # Copy key to bastion
-          scp -o StrictHostKeyChecking=no -i /tmp/master-key /tmp/master-key ubuntu@$BASTION_IP:/tmp/master-key
-          ssh ubuntu@$BASTION_IP "chmod 600 /tmp/master-key"
-
-          # Delete all LoadBalancer services
-          ssh -o StrictHostKeyChecking=no ubuntu@$BASTION_IP \
-            "ssh -o StrictHostKeyChecking=no -i /tmp/master-key ubuntu@$MASTER_IP \
-            'K=\"sudo /var/lib/rancher/rke2/bin/kubectl --kubeconfig /etc/rancher/rke2/rke2.yaml\"
-             \$K get svc --all-namespaces | grep LoadBalancer || true
-             \$K delete svc --all-namespaces -l \"\" --field-selector spec.type=LoadBalancer 2>/dev/null || true
-             # Direct delete demo-lb
-             \$K delete svc demo-lb -n default 2>/dev/null || true
-             echo Waiting 30s for CCM to delete ELBs...
-             sleep 30'" || true
-          echo "Pre-destroy ELB cleanup done"
-
       - uses: hashicorp/setup-terraform@v3
         with:
           terraform_version: "1.7"
@@ -81,5 +44,24 @@ jobs:
       - name: Terraform Init
         run: terraform init
 
+      - name: Pre-Destroy - Clean ELBs
+        if: github.event.inputs.confirm == 'DESTROY'
+        continue-on-error: true
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+        run: |
+          BASTION_IP=$(terraform output -raw bastion_public_ip 2>/dev/null || echo "")
+          MASTER_IP=$(terraform output -raw master_private_ip 2>/dev/null || echo "")
+          if [ -z "$BASTION_IP" ]; then echo "No bastion IP in state — skip ELB cleanup"; exit 0; fi
+
+          echo "$SSH_PRIVATE_KEY" > /tmp/master-key && chmod 600 /tmp/master-key
+          ssh-keyscan -H $BASTION_IP >> ~/.ssh/known_hosts 2>/dev/null
+          scp -o StrictHostKeyChecking=no -i /tmp/master-key /tmp/master-key ubuntu@$BASTION_IP:/tmp/master-key
+          ssh ubuntu@$BASTION_IP "chmod 600 /tmp/master-key"
+          ssh -o StrictHostKeyChecking=no ubuntu@$BASTION_IP \
+            "ssh -o StrictHostKeyChecking=no -i /tmp/master-key ubuntu@$MASTER_IP \
+            'sudo /var/lib/rancher/rke2/bin/kubectl --kubeconfig /etc/rancher/rke2/rke2.yaml delete svc demo-lb -n default 2>/dev/null || true; sleep 30'" || true
+
       - name: Terraform Destroy
+        if: github.event.inputs.confirm == 'DESTROY'
         run: terraform destroy -auto-approve
