@@ -200,10 +200,19 @@ jobs:
 
       - name: Deploy OTC Cloud Manager
         env:
-          OTC_AK:         ${{ secrets.OTC_ACCESS_KEY }}
-          OTC_SK:         ${{ secrets.OTC_SECRET_KEY }}
-          OTC_PROJECT_ID: ${{ secrets.OTC_PROJECT_ID }}
+          OTC_AK:          ${{ secrets.OTC_ACCESS_KEY }}
+          OTC_SK:          ${{ secrets.OTC_SECRET_KEY }}
+          OTC_PROJECT_ID:  ${{ secrets.OTC_PROJECT_ID }}
+          GHCR_PAT:        ${{ secrets.GH_PAT }}
         run: |
+          # Create imagePullSecret for private GHCR package
+          kubectl --insecure-skip-tls-verify create secret docker-registry ghcr-pull-secret \
+            --namespace kube-system \
+            --docker-server=ghcr.io \
+            --docker-username=wolfslight-forgehouse \
+            --docker-password="$GHCR_PAT" \
+            --dry-run=client -o yaml | kubectl --insecure-skip-tls-verify apply -f -
+
           helm upgrade --install swiss-otc-ccm deploy/helm/swiss-otc-ccm/ \
             --namespace kube-system \
             --set config.auth.access_key="$OTC_AK" \
@@ -213,6 +222,7 @@ jobs:
             --set config.network.subnet_id="$SUBNET_ID" \
             --set config.network.network_id="$NETWORK_ID" \
             --set config.loadbalancer.availability_zones[0]="eu-ch2a" \
+            --set imagePullSecrets[0].name=ghcr-pull-secret \
             --insecure-skip-tls-verify \
             --wait --timeout=10m
           echo "✅ Cloud Manager deployed"
