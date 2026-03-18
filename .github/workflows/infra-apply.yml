@@ -296,8 +296,7 @@ jobs:
             -f deploy/helm/csi-s3/values.yaml \
             --set secret.accessKey="${OTC_AK}" \
             --set secret.secretKey="${OTC_SK}" \
-            --insecure-skip-tls-verify \
-            --wait --timeout=5m
+            --insecure-skip-tls-verify
 
           # Patch 1: imagePullSecrets auf DaemonSet
           DS_PATCH='[{"op":"add","path":"/spec/template/spec/imagePullSecrets","value":[{"name":"ghcr-pull-secret"}]}]'
@@ -307,7 +306,15 @@ jobs:
           STS_PATCH='[{"op":"replace","path":"/spec/template/spec/volumes/0","value":{"name":"socket-dir","hostPath":{"path":"/var/lib/kubelet/plugins/ru.yandex.s3.csi","type":"DirectoryOrCreate"}}},{"op":"add","path":"/spec/template/spec/imagePullSecrets","value":[{"name":"ghcr-pull-secret"}]}]'
           kubectl --insecure-skip-tls-verify patch statefulset csi-s3-provisioner -n kube-system --type=json -p="${STS_PATCH}"
 
-          kubectl --insecure-skip-tls-verify rollout status daemonset/csi-s3 -n kube-system --timeout=3m || true
+          # Warte bis Pods Ready (nach Patches)
+          echo "⏳ Warte auf csi-s3 DaemonSet..."
+          for i in $(seq 1 20); do
+            READY=$(kubectl --insecure-skip-tls-verify get pods -n kube-system -l app=csi-s3 \
+              --field-selector=status.phase=Running --no-headers 2>/dev/null | wc -l)
+            echo "  [$i/20] Running pods: ${READY}"
+            [ "${READY}" -ge 3 ] && break
+            sleep 15
+          done
           kubectl --insecure-skip-tls-verify wait pod -n kube-system -l app=csi-s3-provisioner --for=condition=Ready --timeout=3m || true
 
           echo "✅ CSI-S3 deployed"
