@@ -14,6 +14,7 @@ provider "opentelekomcloud" {
   secret_key  = var.secret_key
   domain_name = var.domain_name
   tenant_id   = var.project_id
+  tenant_name = var.project_name
   auth_url    = "https://iam-pub.eu-ch2.sc.otc.t-systems.com/v3"
   region      = "eu-ch2"
 }
