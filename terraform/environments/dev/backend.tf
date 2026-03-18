@@ -1,7 +1,6 @@
 terraform {
   backend "s3" {
-    # Replace with your OBS bucket name for Terraform state
-    bucket   = "YOUR_TFSTATE_BUCKET"
+    bucket   = "rke2-sotc-tfstate"
     key      = "rke2/terraform.tfstate"
     region   = "eu-ch2"
     endpoint = "https://obs.eu-ch2.sc.otc.t-systems.com"
