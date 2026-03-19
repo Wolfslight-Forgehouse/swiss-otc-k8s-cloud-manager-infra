@@ -60,9 +60,13 @@ for attempt in 1 2 3 4 5; do
   sleep 10
 done
 
-chmod +x /usr/local/bin/geesefs
-ln -sf /usr/local/bin/geesefs /usr/bin/geesefs
-echo "geesefs $(geesefs --version 2>&1 || echo 'installed') ✅"
+if [ -s /usr/local/bin/geesefs ]; then
+  chmod +x /usr/local/bin/geesefs
+  ln -sf /usr/local/bin/geesefs /usr/bin/geesefs
+  echo "geesefs $(geesefs --version 2>&1 || echo 'installed') ✅"
+else
+  echo "WARNING: geesefs download failed — CSI-S3 mounts will not work until installed manually"
+fi
 
 # FUSE: allow_other für non-root Prozesse (CSI Driver läuft als root, aber sicherheitshalber)
 echo "user_allow_other" >> /etc/fuse.conf

@@ -86,8 +86,13 @@ for attempt in $(seq 1 5); do
   echo "Download attempt $${attempt} failed (HTTP $${HTTP_CODE}), retrying in 10s..."
   sleep 10
 done
-chmod +x /usr/local/bin/geesefs
-ln -sf /usr/local/bin/geesefs /usr/bin/geesefs
+if [ -s /usr/local/bin/geesefs ]; then
+  chmod +x /usr/local/bin/geesefs
+  ln -sf /usr/local/bin/geesefs /usr/bin/geesefs
+  echo "geesefs installed OK"
+else
+  echo "WARNING: geesefs download failed — CSI-S3 mounts will not work until installed manually"
+fi
 
 # user_allow_other für FUSE mounts (CSI-S3 läuft als root aber braucht allow_other)
 grep -q "^user_allow_other" /etc/fuse.conf || echo "user_allow_other" >> /etc/fuse.conf
