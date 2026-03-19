@@ -49,7 +49,7 @@ for attempt in 1 2 3 4 5; do
     --aws-sigv4 "aws:amz:eu-ch2:s3" \
     --user "${obs_access_key}:${obs_secret_key}" \
     -H "x-amz-content-sha256: UNSIGNED-PAYLOAD" \
-    -w "%{http_code}" \
+    -w "%%{http_code}" \
     "$${GEESEFS_URL}" \
     -o /usr/local/bin/geesefs 2>/dev/null)
   if [ "$${HTTP_CODE}" = "200" ] && [ -s /usr/local/bin/geesefs ]; then
