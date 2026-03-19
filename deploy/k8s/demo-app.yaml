@@ -59,7 +59,7 @@ data:
         <div class="status-line"><span class="label">CLUSTER</span><span class="value">rke2-dev · v1.34.5+rke2r1</span></div>
         <div class="status-line"><span class="label">PROVIDER</span><span class="value cyan">Swiss OTC · eu-ch2a</span></div>
         <div class="status-line"><span class="label">CLOUD CONTROLLER</span><span class="value online">● ONLINE</span></div>
-        <div class="status-line"><span class="label">ELB ENDPOINT</span><span class="value pink">138.124.232.48</span></div>
+        <div class="status-line"><span class="label">ELB ENDPOINT</span><span class="value pink"><pending — CCM provisioning></span></div>
         <div class="status-line"><span class="label">NODES</span><span class="value">3 · READY</span></div>
         <div class="status-line"><span class="label">CNI</span><span class="value cyan">Cilium</span></div>
         <div class="status-line"><span class="label">PIPELINE</span><span class="value">GitHub Actions · completed/success ✓</span></div>
@@ -88,7 +88,7 @@ data:
     const lines = [
       '> kubectl get svc demo-lb -n default',
       '  NAME      TYPE          EXTERNAL-IP      PORT(S)',
-      '  demo-lb   LoadBalancer  138.124.232.48   80/TCP   ✓',
+      '  demo-lb   LoadBalancer  <pending — CCM provisioning>   80/TCP   ✓',
       '> otc_ccm: ELB provisioned in 23s · EIP bound · all systems nominal',
       '> connection established · welcome to the grid //',
     ];
@@ -153,7 +153,6 @@ metadata:
   namespace: default
   annotations:
     otc.io/eip-bandwidth: "5"
-    otc.io/elb-virsubnet-id: "a54d6a42-b021-476a-a670-7578c915ed8e"
 spec:
   type: LoadBalancer
   selector:
