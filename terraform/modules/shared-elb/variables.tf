@@ -14,10 +14,16 @@ variable "subnet_id" {
 
 variable "subnet_network_id" {
   type        = string
-  description = "Neutron Subnet ID (vip_subnet_cidr_id) — opentelekomcloud_vpc_subnet_v1.subnet_id"
+  description = "Neutron Subnet ID (vip_subnet_cidr_id)"
 }
 
 variable "availability_zone" {
   type    = string
   default = "eu-ch2a"
+}
+
+variable "enable_eip" {
+  type        = bool
+  description = "EIP an ELB binden (public erreichbar). false = nur VPC-intern"
+  default     = false
 }

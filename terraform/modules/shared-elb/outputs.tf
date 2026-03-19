@@ -9,6 +9,6 @@ output "elb_vip" {
 }
 
 output "public_ip" {
-  description = "Public EIP des shared ELB"
-  value       = opentelekomcloud_vpc_eip_v1.shared_elb.publicip[0].ip_address
+  description = "Public EIP (leer wenn enable_eip = false)"
+  value       = var.enable_eip ? opentelekomcloud_vpc_eip_v1.shared_elb[0].publicip[0].ip_address : ""
 }
