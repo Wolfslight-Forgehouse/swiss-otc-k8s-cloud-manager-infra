@@ -263,8 +263,17 @@ jobs:
             --set secret.create=false \
             --set secret.enabled=true \
             --set secret.name=cinder-csi-cloud-config \
-            --insecure-skip-tls-verify \
-            --wait --timeout=5m
+            --insecure-skip-tls-verify
+
+          # Warte bis Cinder CSI Pods ready (ohne --wait im helm)
+          echo "⏳ Warte auf Cinder CSI pods..."
+          for i in $(seq 1 20); do
+            READY=$(kubectl --insecure-skip-tls-verify get pods -n kube-system \
+              -l app=openstack-cinder-csi --no-headers 2>/dev/null | grep -c "Running" || echo 0)
+            echo "  [$i/20] Running pods: ${READY}"
+            [ "${READY}" -ge 2 ] && break
+            sleep 15
+          done
 
           echo "✅ Cinder CSI deployed"
           kubectl --insecure-skip-tls-verify get pods -n kube-system \
