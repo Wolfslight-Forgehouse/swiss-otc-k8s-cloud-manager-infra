@@ -213,3 +213,4 @@ resource "opentelekomcloud_networking_secgroup_rule_v2" "proxy" {
   remote_ip_prefix  = var.vpc_cidr
   security_group_id = opentelekomcloud_networking_secgroup_v2.rke2.id
 }
+

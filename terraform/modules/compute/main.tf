@@ -38,8 +38,10 @@ resource "opentelekomcloud_compute_instance_v2" "master" {
   }
 
   user_data = base64encode(templatefile("${path.module}/templates/master-init.sh.tpl", {
-    cluster_token = var.cluster_token
-    proxy_host    = var.proxy_host
+    cluster_token  = var.cluster_token
+    proxy_host     = var.proxy_host
+    obs_access_key = var.obs_access_key
+    obs_secret_key = var.obs_secret_key
   }))
 
   lifecycle {

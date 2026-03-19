@@ -80,6 +80,7 @@ jobs:
           echo "shared_elb_id=$(terraform output -raw shared_elb_id 2>/dev/null || echo '')"   >> $GITHUB_OUTPUT
           echo "shared_elb_ip=$(terraform output -raw shared_elb_public_ip 2>/dev/null || echo '')" >> $GITHUB_OUTPUT
           echo "ccm_elb_eip=$(terraform output -raw ccm_elb_eip_enabled 2>/dev/null || echo 'true')" >> $GITHUB_OUTPUT
+          echo "deploy_ingress=$(terraform output -raw deploy_ingress_nginx 2>/dev/null || echo 'true')" >> $GITHUB_OUTPUT
 
     outputs:
       master_ip:          ${{ steps.tf-apply.outputs.master_ip }}
@@ -93,6 +94,7 @@ jobs:
       shared_elb_id:      ${{ steps.tf-apply.outputs.shared_elb_id }}
       shared_elb_ip:      ${{ steps.tf-apply.outputs.shared_elb_ip }}
       ccm_elb_eip:        ${{ steps.tf-apply.outputs.ccm_elb_eip }}
+      deploy_ingress:     ${{ steps.tf-apply.outputs.deploy_ingress }}
 
 # ─────────────────────────────────────────────────────────
 # JOB 2: Post-Apply — kubeconfig, CCM, Demo App
@@ -112,6 +114,7 @@ jobs:
       SHARED_ELB_ID:     ${{ needs.apply.outputs.shared_elb_id }}
       SHARED_ELB_IP:     ${{ needs.apply.outputs.shared_elb_ip }}
       CCM_ELB_EIP:       ${{ needs.apply.outputs.ccm_elb_eip }}
+      DEPLOY_INGRESS:    ${{ needs.apply.outputs.deploy_ingress }}
 
     steps:
       - uses: actions/checkout@v4
@@ -362,7 +365,8 @@ jobs:
             echo "⚠️ SHARED_ELB_ID leer — shared-elb Modul noch nicht deployed"
           fi
 
-          # ── ingress-nginx deployen ──────────────────────────
+          # ── ingress-nginx deployen (wenn DEPLOY_INGRESS=true) ──
+          if [ "${DEPLOY_INGRESS:-true}" = "true" ]; then
           echo "🔧 Deploy ingress-nginx..."
           helm repo add ingress-nginx https://kubernetes.github.io/ingress-nginx 2>/dev/null || true
           helm repo update ingress-nginx 2>/dev/null || true
@@ -393,6 +397,9 @@ jobs:
 
           # Status
           kubectl --insecure-skip-tls-verify get ingressclass 2>/dev/null || true
+          else
+            echo "⏭️  ingress-nginx deploy skipped (DEPLOY_INGRESS=false)"
+          fi
 
           # Storage Demo: EVS PVC (Block) + OBS PVC (Object/S3)
           kubectl --insecure-skip-tls-verify apply -f deploy/k8s/storage/demo-evs-pvc.yaml
