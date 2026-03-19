@@ -169,6 +169,55 @@ jobs:
           chmod 600 ~/.ssh/config
 
       # ── Wait for RKE2 ──────────────────────────────────
+      - name: Install geesefs on all nodes (via SCP over Bastion)
+        continue-on-error: true
+        run: |
+          GEESEFS_VERSION="v0.42.4"
+          GEESEFS_URL="https://obs.eu-ch2.sc.otc.t-systems.com/rke2-sotc-tfstate/binaries/geesefs-linux-amd64-${GEESEFS_VERSION}"
+
+          echo "⬇️  Downloading geesefs ${GEESEFS_VERSION} from OBS to runner..."
+          HTTP=$(curl -sf \
+            --aws-sigv4 "aws:amz:eu-ch2:s3" \
+            --user "${{ secrets.OTC_ACCESS_KEY }}:${{ secrets.OTC_SECRET_KEY }}" \
+            -H "x-amz-content-sha256: UNSIGNED-PAYLOAD" \
+            -w "%{http_code}" \
+            "$GEESEFS_URL" \
+            -o /tmp/geesefs 2>/dev/null)
+          if [ "$HTTP" = "200" ] && [ -s /tmp/geesefs ]; then
+            chmod +x /tmp/geesefs
+            echo "✅ geesefs downloaded ($(du -sh /tmp/geesefs | cut -f1))"
+          else
+            echo "❌ geesefs download failed (HTTP $HTTP) — skipping node install"
+            exit 0
+          fi
+
+          # Master
+          echo "📦 Installing geesefs on master (${MASTER_IP})..."
+          scp -o StrictHostKeyChecking=no \
+            -o ProxyCommand="ssh -o StrictHostKeyChecking=no -i /tmp/master-key -W %h:%p ubuntu@${BASTION_IP}" \
+            -i /tmp/master-key /tmp/geesefs ubuntu@${MASTER_IP}:/tmp/geesefs 2>/dev/null && \
+          ssh -o StrictHostKeyChecking=no -i /tmp/master-key ubuntu@${BASTION_IP} \
+            "ssh -o StrictHostKeyChecking=no -i /tmp/master-key ubuntu@${MASTER_IP} \
+            'sudo install -m 755 /tmp/geesefs /usr/local/bin/geesefs && \
+             sudo ln -sf /usr/local/bin/geesefs /usr/bin/geesefs && \
+             grep -q user_allow_other /etc/fuse.conf || echo user_allow_other | sudo tee -a /etc/fuse.conf && \
+             echo geesefs OK'" && echo "  ✅ master done" || echo "  ⚠️ master geesefs install failed"
+
+          # Workers
+          WORKERS=$(echo "${WORKER_IPS_JSON}" | python3 -c "import sys,json; print(' '.join(json.load(sys.stdin)))" 2>/dev/null || echo "")
+          for W_IP in $WORKERS; do
+            echo "📦 Installing geesefs on worker (${W_IP})..."
+            scp -o StrictHostKeyChecking=no \
+              -o ProxyCommand="ssh -o StrictHostKeyChecking=no -i /tmp/master-key -W %h:%p ubuntu@${BASTION_IP}" \
+              -i /tmp/master-key /tmp/geesefs ubuntu@${W_IP}:/tmp/geesefs 2>/dev/null && \
+            ssh -o StrictHostKeyChecking=no -i /tmp/master-key ubuntu@${BASTION_IP} \
+              "ssh -o StrictHostKeyChecking=no -i /tmp/master-key ubuntu@${W_IP} \
+              'sudo install -m 755 /tmp/geesefs /usr/local/bin/geesefs && \
+               sudo ln -sf /usr/local/bin/geesefs /usr/bin/geesefs && \
+               grep -q user_allow_other /etc/fuse.conf || echo user_allow_other | sudo tee -a /etc/fuse.conf && \
+               echo geesefs OK'" && echo "  ✅ ${W_IP} done" || echo "  ⚠️ ${W_IP} geesefs install failed"
+          done
+
       - name: Wait for RKE2 master ready
         run: |
           echo "⏳ Polling RKE2 server on $MASTER_IP (via $BASTION_IP)..."
