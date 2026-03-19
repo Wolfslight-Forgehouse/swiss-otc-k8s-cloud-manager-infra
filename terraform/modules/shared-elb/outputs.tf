@@ -10,5 +10,5 @@ output "elb_vip" {
 
 output "public_ip" {
   description = "Public EIP des shared ELB"
-  value       = opentelekomcloud_lb_loadbalancer_v3.shared.public_ip[0].public_ip_address
+  value       = opentelekomcloud_vpc_eip_v1.shared_elb.publicip[0].ip_address
 }
