@@ -77,6 +77,8 @@ jobs:
           echo "subnet_network_id=$(terraform output -raw subnet_network_id)"   >> $GITHUB_OUTPUT
           echo "security_group_id=$(terraform output -raw security_group_id)"   >> $GITHUB_OUTPUT
           echo "worker_ips_json=$(terraform output -raw worker_ips_json)"          >> $GITHUB_OUTPUT
+          echo "shared_elb_id=$(terraform output -raw shared_elb_id 2>/dev/null || echo '')"   >> $GITHUB_OUTPUT
+          echo "shared_elb_ip=$(terraform output -raw shared_elb_public_ip 2>/dev/null || echo '')" >> $GITHUB_OUTPUT
 
     outputs:
       master_ip:          ${{ steps.tf-apply.outputs.master_ip }}
@@ -87,6 +89,8 @@ jobs:
       subnet_network_id:  ${{ steps.tf-apply.outputs.subnet_network_id }}
       security_group_id:  ${{ steps.tf-apply.outputs.security_group_id }}
       worker_ips_json:    ${{ steps.tf-apply.outputs.worker_ips_json }}
+      shared_elb_id:      ${{ steps.tf-apply.outputs.shared_elb_id }}
+      shared_elb_ip:      ${{ steps.tf-apply.outputs.shared_elb_ip }}
 
 # ─────────────────────────────────────────────────────────
 # JOB 2: Post-Apply — kubeconfig, CCM, Demo App
@@ -103,6 +107,8 @@ jobs:
       SUBNET_ID:  ${{ needs.apply.outputs.subnet_network_id }}
       NETWORK_ID:        ${{ needs.apply.outputs.subnet_id }}
       WORKER_IPS_JSON:   ${{ needs.apply.outputs.worker_ips_json }}
+      SHARED_ELB_ID:     ${{ needs.apply.outputs.shared_elb_id }}
+      SHARED_ELB_IP:     ${{ needs.apply.outputs.shared_elb_ip }}
 
     steps:
       - uses: actions/checkout@v4
@@ -339,6 +345,19 @@ jobs:
           # Subnet-ID Annotation nachpatchen (CCM braucht korrekte Subnet für ELB)
           kubectl --insecure-skip-tls-verify annotate svc demo-lb \
             otc.io/elb-virsubnet-id="${SUBNET_ID}" --overwrite
+
+          # ── Shared ELB Service annotieren ──────────────────
+          if [ -n "${SHARED_ELB_ID}" ]; then
+            echo "🔗 Annotating shared-elb-demo with ELB ID: ${SHARED_ELB_ID}"
+            kubectl --insecure-skip-tls-verify apply -f deploy/k8s/elb/shared-elb-demo-service.yaml 2>/dev/null || true
+            kubectl --insecure-skip-tls-verify annotate svc shared-elb-demo -n default \
+              "kubernetes.io/elb.id=${SHARED_ELB_ID}" \
+              "otc.io/elb-virsubnet-id=${SUBNET_ID}" \
+              --overwrite
+            echo "✅ shared-elb-demo → ELB ${SHARED_ELB_ID} (IP: ${SHARED_ELB_IP})"
+          else
+            echo "⚠️ SHARED_ELB_ID leer — shared-elb Modul noch nicht deployed"
+          fi
 
           # Storage Demo: EVS PVC (Block) + OBS PVC (Object/S3)
           kubectl --insecure-skip-tls-verify apply -f deploy/k8s/storage/demo-evs-pvc.yaml
