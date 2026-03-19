@@ -269,9 +269,9 @@ jobs:
           echo "⏳ Warte auf Cinder CSI pods..."
           for i in $(seq 1 20); do
             READY=$(kubectl --insecure-skip-tls-verify get pods -n kube-system \
-              -l app=openstack-cinder-csi --no-headers 2>/dev/null | grep -c "Running" || echo 0)
+              -l app=openstack-cinder-csi --no-headers 2>/dev/null | grep -c "Running" || echo "0")
             echo "  [$i/20] Running pods: ${READY}"
-            [ "${READY}" -ge 2 ] && break
+            [ "${READY:-0}" -ge 2 ] 2>/dev/null && break
             sleep 15
           done
 
@@ -316,12 +316,12 @@ jobs:
           kubectl --insecure-skip-tls-verify patch statefulset csi-s3-provisioner -n kube-system --type=json -p="${STS_PATCH}"
 
           # Warte bis Pods Ready (nach Patches)
-          echo "⏳ Warte auf csi-s3 DaemonSet..."
+          echo "⏳ Warte auf csi-s3 Provisioner (master-only, Worker joinen später)..."
           for i in $(seq 1 20); do
-            READY=$(kubectl --insecure-skip-tls-verify get pods -n kube-system -l app=csi-s3 \
-              --field-selector=status.phase=Running --no-headers 2>/dev/null | wc -l)
-            echo "  [$i/20] Running pods: ${READY}"
-            [ "${READY}" -ge 3 ] && break
+            READY=$(kubectl --insecure-skip-tls-verify get pods -n kube-system \
+              -l app=csi-s3-provisioner --no-headers 2>/dev/null | grep -c "Running" || echo "0")
+            echo "  [$i/20] Provisioner Running: ${READY}"
+            [ "${READY:-0}" -ge 1 ] 2>/dev/null && break
             sleep 15
           done
           kubectl --insecure-skip-tls-verify wait pod -n kube-system -l app=csi-s3-provisioner --for=condition=Ready --timeout=3m || true
