@@ -79,6 +79,7 @@ jobs:
           echo "worker_ips_json=$(terraform output -raw worker_ips_json)"          >> $GITHUB_OUTPUT
           echo "shared_elb_id=$(terraform output -raw shared_elb_id 2>/dev/null || echo '')"   >> $GITHUB_OUTPUT
           echo "shared_elb_ip=$(terraform output -raw shared_elb_public_ip 2>/dev/null || echo '')" >> $GITHUB_OUTPUT
+          echo "ccm_elb_eip=$(terraform output -raw ccm_elb_eip_enabled 2>/dev/null || echo 'true')" >> $GITHUB_OUTPUT
 
     outputs:
       master_ip:          ${{ steps.tf-apply.outputs.master_ip }}
@@ -91,6 +92,7 @@ jobs:
       worker_ips_json:    ${{ steps.tf-apply.outputs.worker_ips_json }}
       shared_elb_id:      ${{ steps.tf-apply.outputs.shared_elb_id }}
       shared_elb_ip:      ${{ steps.tf-apply.outputs.shared_elb_ip }}
+      ccm_elb_eip:        ${{ steps.tf-apply.outputs.ccm_elb_eip }}
 
 # ─────────────────────────────────────────────────────────
 # JOB 2: Post-Apply — kubeconfig, CCM, Demo App
@@ -109,6 +111,7 @@ jobs:
       WORKER_IPS_JSON:   ${{ needs.apply.outputs.worker_ips_json }}
       SHARED_ELB_ID:     ${{ needs.apply.outputs.shared_elb_id }}
       SHARED_ELB_IP:     ${{ needs.apply.outputs.shared_elb_ip }}
+      CCM_ELB_EIP:       ${{ needs.apply.outputs.ccm_elb_eip }}
 
     steps:
       - uses: actions/checkout@v4
@@ -358,6 +361,38 @@ jobs:
           else
             echo "⚠️ SHARED_ELB_ID leer — shared-elb Modul noch nicht deployed"
           fi
+
+          # ── ingress-nginx deployen ──────────────────────────
+          echo "🔧 Deploy ingress-nginx..."
+          helm repo add ingress-nginx https://kubernetes.github.io/ingress-nginx 2>/dev/null || true
+          helm repo update ingress-nginx 2>/dev/null || true
+
+          # nginx-internal — immer deployen
+          echo "  Installing nginx-internal..."
+          INTERNAL_VALUES=$(sed "s/\${SUBNET_ID}/${SUBNET_ID}/g" deploy/k8s/ingress/nginx-internal-values.yaml)
+          helm upgrade --install nginx-internal ingress-nginx/ingress-nginx \
+            --namespace ingress-nginx --create-namespace \
+            --kubeconfig /tmp/rke2.yaml --insecure-skip-tls-verify \
+            -f <(echo "$INTERNAL_VALUES") \
+            --timeout 5m --wait=false
+          echo "  ✅ nginx-internal installed (IngressClass: nginx-internal)"
+
+          # nginx-public — nur wenn CCM_ELB_EIP = true
+          if [ "${CCM_ELB_EIP}" = "true" ]; then
+            echo "  Installing nginx-public (CCM_ELB_EIP=true)..."
+            PUBLIC_VALUES=$(sed "s/\${SUBNET_ID}/${SUBNET_ID}/g" deploy/k8s/ingress/nginx-public-values.yaml)
+            helm upgrade --install nginx-public ingress-nginx/ingress-nginx \
+              --namespace ingress-nginx --create-namespace \
+              --kubeconfig /tmp/rke2.yaml --insecure-skip-tls-verify \
+              -f <(echo "$PUBLIC_VALUES") \
+              --timeout 5m --wait=false
+            echo "  ✅ nginx-public installed (IngressClass: nginx-public, EIP=true)"
+          else
+            echo "  ⏭️  nginx-public skipped (CCM_ELB_EIP=false)"
+          fi
+
+          # Status
+          kubectl --insecure-skip-tls-verify get ingressclass 2>/dev/null || true
 
           # Storage Demo: EVS PVC (Block) + OBS PVC (Object/S3)
           kubectl --insecure-skip-tls-verify apply -f deploy/k8s/storage/demo-evs-pvc.yaml

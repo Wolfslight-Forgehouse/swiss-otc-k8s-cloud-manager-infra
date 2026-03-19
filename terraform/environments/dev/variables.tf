@@ -83,3 +83,33 @@ variable "environment" {
   description = "Environment name (dev, staging, prod)"
   default     = "dev"
 }
+
+# =====================================================
+# Shared ELB (pre-deployed, Terraform-managed)
+# =====================================================
+variable "enable_shared_elb" {
+  type        = bool
+  description = "Pre-deployed shared ELB erstellen (Terraform-managed, CCM nutzt ihn via elb.id)"
+  default     = false
+}
+
+variable "shared_elb_eip" {
+  type        = bool
+  description = "Shared ELB mit öffentlicher EIP ausstatten (nur wenn enable_shared_elb = true)"
+  default     = false
+}
+
+# =====================================================
+# CCM Ingress / ELB Konfiguration
+# =====================================================
+variable "ccm_elb_eip" {
+  type        = bool
+  description = "CCM-managed ELBs bekommen EIP (public). Wenn true: nginx-public IngressClass wird deployed"
+  default     = true
+}
+
+variable "deploy_ingress_nginx" {
+  type        = bool
+  description = "ingress-nginx deployen (nginx-internal immer, nginx-public wenn ccm_elb_eip = true)"
+  default     = false
+}

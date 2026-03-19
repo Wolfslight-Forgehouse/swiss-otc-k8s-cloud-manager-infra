@@ -55,16 +55,19 @@ module "jumpserver" {
 
 
 # =====================================================
-# 2b. Shared ELB — pre-deployed, CCM managed via annotation
-#     kubernetes.io/elb.id: <elb_id>
+# 2b. Shared ELB — optional, pre-deployed
+#     enable_shared_elb = true  → Terraform erstellt ELB
+#     shared_elb_eip    = true  → ELB bekommt öffentliche EIP
 # =====================================================
 module "shared_elb" {
+  count              = var.enable_shared_elb ? 1 : 0
   source             = "../../modules/shared-elb"
   cluster_name       = var.cluster_name
   vpc_id             = module.networking.vpc_id
   subnet_id          = module.networking.subnet_id
   subnet_network_id  = module.networking.subnet_network_id
   availability_zone  = "eu-ch2a"
+  enable_eip         = var.shared_elb_eip
 
   depends_on = [module.networking]
 }
@@ -137,11 +140,16 @@ output "subnet_network_id" {
 
 output "shared_elb_id" {
   description = "Shared ELB ID — für kubernetes.io/elb.id Annotation"
-  value       = module.shared_elb.elb_id
+  value       = var.enable_shared_elb ? module.shared_elb[0].elb_id : ""
 }
 
 output "shared_elb_public_ip" {
-  description = "Public IP des shared ELB"
-  value       = module.shared_elb.public_ip
+  description = "Public IP des shared ELB (leer wenn kein EIP)"
+  value       = var.enable_shared_elb && var.shared_elb_eip ? module.shared_elb[0].public_ip : ""
+}
+
+output "ccm_elb_eip_enabled" {
+  description = "Ob CCM ELBs EIP bekommen (nginx-public verfügbar?)"
+  value       = var.ccm_elb_eip
 }
 
