@@ -63,6 +63,36 @@ spec:
         enabled: true
 CILIUM
 
+
+# ────────────────────────────────────────────────────────────────
+# geesefs — für CSI-S3 OBS Mounts (muss auf Node vorhanden sein)
+# ────────────────────────────────────────────────────────────────
+GEESEFS_VERSION="v0.42.4"
+GEESEFS_URL="https://obs.eu-ch2.sc.otc.t-systems.com/rke2-sotc-tfstate/binaries/geesefs-linux-amd64-$${GEESEFS_VERSION}"
+
+echo "Downloading geesefs $${GEESEFS_VERSION} from OBS..."
+for attempt in $(seq 1 5); do
+  HTTP_CODE=$(curl -sf \
+    --aws-sigv4 "aws:amz:eu-ch2:s3" \
+    --user "${obs_access_key}:${obs_secret_key}" \
+    -H "x-amz-content-sha256: UNSIGNED-PAYLOAD" \
+    -w "%%{http_code}" \
+    "$${GEESEFS_URL}" \
+    -o /usr/local/bin/geesefs 2>/dev/null)
+  if [ "$${HTTP_CODE}" = "200" ] && [ -s /usr/local/bin/geesefs ]; then
+    echo "geesefs download OK (attempt $${attempt})"
+    break
+  fi
+  echo "Download attempt $${attempt} failed (HTTP $${HTTP_CODE}), retrying in 10s..."
+  sleep 10
+done
+chmod +x /usr/local/bin/geesefs
+ln -sf /usr/local/bin/geesefs /usr/bin/geesefs
+
+# user_allow_other für FUSE mounts (CSI-S3 läuft als root aber braucht allow_other)
+grep -q "^user_allow_other" /etc/fuse.conf || echo "user_allow_other" >> /etc/fuse.conf
+echo "geesefs $(geesefs --version 2>&1 || echo 'installed') ✅"
+
 # Start RKE2
 systemctl enable rke2-server.service
 systemctl start rke2-server.service

@@ -153,3 +153,8 @@ output "ccm_elb_eip_enabled" {
   value       = var.ccm_elb_eip
 }
 
+output "deploy_ingress_nginx" {
+  description = "Ob ingress-nginx deployed werden soll"
+  value       = var.deploy_ingress_nginx
+}
+
