@@ -321,14 +321,43 @@ jobs:
           kubectl --insecure-skip-tls-verify get pods -n kube-system | grep csi-s3
           kubectl --insecure-skip-tls-verify get sc | grep obs
 
-      # ── Deploy Demo App + wait for ELB ─────────────────
-      - name: Deploy Demo App
+      # ── Deploy Demo App + Storage PVCs ──────────────────
+      - name: Deploy Demo App + Storage Demo
         run: |
-          kubectl --insecure-skip-tls-verify apply \
-            -f deploy/k8s/demo-app.yaml
+          # Demo App: Subnet-ID dynamisch setzen (frisch nach Terraform)
+          kubectl --insecure-skip-tls-verify apply -f deploy/k8s/demo-app.yaml
+
+          # Subnet-ID Annotation nachpatchen (CCM braucht korrekte Subnet für ELB)
+          kubectl --insecure-skip-tls-verify annotate svc demo-lb \
+            otc.io/elb-virsubnet-id="${SUBNET_ID}" --overwrite
+
+          # Storage Demo: EVS PVC (Block) + OBS PVC (Object/S3)
+          kubectl --insecure-skip-tls-verify apply -f deploy/k8s/storage/demo-evs-pvc.yaml
+          kubectl --insecure-skip-tls-verify apply -f deploy/k8s/storage/demo-obs-pvc.yaml
+
+          # Warte auf EVS PVC Bind (sollte schnell gehen ~10s)
+          echo "⏳ Warte auf EVS PVC..."
+          for i in $(seq 1 12); do
+            STATUS=$(kubectl --insecure-skip-tls-verify get pvc demo-evs-pvc -o jsonpath='{.status.phase}' 2>/dev/null)
+            echo "  [$i/12] EVS PVC: ${STATUS:-Pending}"
+            [ "${STATUS}" = "Bound" ] && break
+            sleep 10
+          done
+
+          # OBS PVC Status (kann länger dauern weil geesefs)
+          echo "⏳ Warte auf OBS PVC..."
+          for i in $(seq 1 12); do
+            STATUS=$(kubectl --insecure-skip-tls-verify get pvc demo-obs-pvc -o jsonpath='{.status.phase}' 2>/dev/null)
+            echo "  [$i/12] OBS PVC: ${STATUS:-Pending}"
+            [ "${STATUS}" = "Bound" ] && break
+            sleep 10
+          done
+
+          echo "✅ Storage deployed"
+          kubectl --insecure-skip-tls-verify get pvc
 
           echo "⏳ Waiting for ELB External-IP (OTC ELB v3 provisioning ~2 min)..."
-          for i in $(seq 1 36); do
+          for i in $(seq 1 90); do
             EXT_IP=$(kubectl --insecure-skip-tls-verify get svc -A \
               -o jsonpath='{range .items[?(@.spec.type=="LoadBalancer")]}{.status.loadBalancer.ingress[0].ip}{end}' \
               2>/dev/null)
