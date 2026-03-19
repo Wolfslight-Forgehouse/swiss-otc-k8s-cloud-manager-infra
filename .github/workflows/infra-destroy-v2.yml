@@ -81,15 +81,18 @@ jobs:
               $K delete svc "$NAME" -n "$NS" --timeout=30s 2>/dev/null || true
             done
 
-          # Wait up to 3 minutes for CCM to clean up ELBs on OTC
-          echo "=== Waiting for CCM to remove ELBs (max 3min) ==="
-          for i in $(seq 1 18); do
+          # Wait up to 5 minutes for CCM to clean up ELBs on OTC
+          echo "=== Waiting for CCM to remove ELBs (max 5min) ==="
+          for i in $(seq 1 30); do
             COUNT=$($K get svc --all-namespaces --no-headers 2>/dev/null | \
               awk '$4=="LoadBalancer"' | wc -l)
-            echo "  [$i/18] Remaining LB services: $COUNT"
+            echo "  [$i/30] Remaining LB services: $COUNT"
             [ "$COUNT" -eq 0 ] && { echo "All ELBs cleaned up"; break; }
             sleep 10
           done
+
+          echo "=== Extra 60s buffer for OTC ELB API to fully remove resources ==="
+          sleep 60
           REMOTESCRIPT
 
       - name: Terraform Destroy
