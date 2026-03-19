@@ -74,7 +74,7 @@ jobs:
 
           # Alle k8s-managed ELBs finden
           ELBS=$(curl -sf -H "X-Auth-Token: $TOKEN" "$ELB_EP/loadbalancers?limit=100" 2>/dev/null | \
-            python3 -c "import sys,json; [print(e['id'],e['name']) for e in json.load(sys.stdin).get('loadbalancers',[]) if 'k8s' in e.get('name','') or 'kubernetes' in e.get('name','')]" || true)
+            python3 -c "import sys,json; [print(e['id'],e['name']) for e in json.load(sys.stdin).get('loadbalancers',[]) if e.get('name','').startswith('k8s-kubernetes-')]" || true)
 
           [ -z "$ELBS" ] && echo "✅ No CCM ELBs found" && exit 0
           echo "Found CCM ELBs:"; echo "$ELBS"
