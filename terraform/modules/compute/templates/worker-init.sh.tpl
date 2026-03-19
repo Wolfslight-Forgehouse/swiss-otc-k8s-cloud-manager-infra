@@ -17,7 +17,7 @@ PROXY
 %{ endif }
 
 # Wait for internet / proxy
-for i in $$(seq 1 30); do
+for i in $(seq 1 30); do
   curl -sf --max-time 5 https://get.rke2.io > /dev/null 2>&1 && break
   echo "Waiting for internet... attempt $i/30"
   sleep 10
@@ -40,21 +40,29 @@ CONFIG
 # ────────────────────────────────────────────────────────────────
 
 # geesefs v0.42.4 von OBS holen (OBS-Endpoint intern erreichbar)
-OBS_ENDPOINT="https://obs.eu-ch2.sc.otc.t-systems.com"
-GEESEFS_VERSION="v0.42.4"  # pinned
-GEESEFS_OBS_PATH="rke2-sotc-tfstate/binaries/geesefs-linux-amd64-$${GEESEFS_VERSION}"
+# HINWEIS: OBS benötigt x-amz-content-sha256 Header beim sigv4 curl
+GEESEFS_URL="https://obs.eu-ch2.sc.otc.t-systems.com/rke2-sotc-tfstate/binaries/geesefs-linux-amd64-v0.42.4"
 
-echo "Downloading geesefs $${GEESEFS_VERSION} from OBS..."
-# OBS: public read via pre-signed oder anonymer Zugriff (Bucket hat kein public ACL)
-# Alternative: direkt via AK/SK signiert downloaden
-curl -sf \
-  --aws-sigv4 "aws:amz:eu-ch2:s3" \
-  --user "${obs_access_key}:${obs_secret_key}" \
-  "$${OBS_ENDPOINT}/$${GEESEFS_OBS_PATH}" \
-  -o /usr/local/bin/geesefs
+echo "Downloading geesefs v0.42.4 from OBS..."
+for attempt in 1 2 3 4 5; do
+  HTTP_CODE=$(curl -sf \
+    --aws-sigv4 "aws:amz:eu-ch2:s3" \
+    --user "${obs_access_key}:${obs_secret_key}" \
+    -H "x-amz-content-sha256: UNSIGNED-PAYLOAD" \
+    -w "%{http_code}" \
+    "$${GEESEFS_URL}" \
+    -o /usr/local/bin/geesefs 2>/dev/null)
+  if [ "$${HTTP_CODE}" = "200" ] && [ -s /usr/local/bin/geesefs ]; then
+    echo "geesefs download OK (attempt $${attempt})"
+    break
+  fi
+  echo "Download attempt $${attempt} failed (HTTP $${HTTP_CODE}), retrying in 10s..."
+  sleep 10
+done
 
 chmod +x /usr/local/bin/geesefs
-echo "geesefs $$(geesefs --version 2>&1 || echo 'installed') ✅"
+ln -sf /usr/local/bin/geesefs /usr/bin/geesefs
+echo "geesefs $(geesefs --version 2>&1 || echo 'installed') ✅"
 
 # FUSE: allow_other für non-root Prozesse (CSI Driver läuft als root, aber sicherheitshalber)
 echo "user_allow_other" >> /etc/fuse.conf
