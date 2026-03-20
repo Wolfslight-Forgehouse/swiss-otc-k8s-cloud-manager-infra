@@ -1,6 +1,6 @@
 terraform {
   backend "s3" {
-    bucket   = "rke2-sotc-tfstate"
+    bucket   = "YOUR-TFSTATE-BUCKET"
     key      = "rke2/terraform.tfstate"
     region   = "eu-ch2"
     endpoint = "https://obs.eu-ch2.sc.otc.t-systems.com"

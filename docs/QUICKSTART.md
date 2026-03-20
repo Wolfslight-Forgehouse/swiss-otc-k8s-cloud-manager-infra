@@ -33,7 +33,7 @@ Und unter `Settings → Environments → production` dieselben Secrets auch als 
 ## Schritt 2: OBS Bucket für Terraform State
 
 Im OTC Console unter Storage → OBS → Bucket erstellen:
-- Name: `rke2-sotc-tfstate`
+- Name: `your-tfstate-bucket`
 - Region: `eu-ch2`
 - Versioning: aktiviert
 

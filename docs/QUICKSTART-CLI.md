@@ -15,11 +15,11 @@ curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
 ## 1. OTC Credentials vorbereiten
 
 ```bash
-export OTC_ACCESS_KEY="YOUR_OTC_ACCESS_KEY"       # AK
-export OTC_SECRET_KEY="your-secret-key"              # SK
+export OTC_ACCESS_KEY="YOUR_OTC_ACCESS_KEY"
+export OTC_SECRET_KEY="YOUR_OTC_SECRET_KEY"
 export OTC_PROJECT_ID="YOUR_PROJECT_ID"
-export OTC_DOMAIN_NAME="YOUR_OTC_DOMAIN_NAME"
-export OTC_USERNAME="your-iam-user"
+export OTC_DOMAIN_NAME="YOUR_DOMAIN_NAME"
+export OTC_USERNAME="YOUR_IAM_USERNAME"
 export OTC_PASSWORD="your-password"
 export OTC_TENANT_NAME="eu-ch2_yourproject"
 ```
@@ -31,7 +31,7 @@ export OTC_TENANT_NAME="eu-ch2_yourproject"
 aws configure set aws_access_key_id $OTC_ACCESS_KEY
 aws configure set aws_secret_access_key $OTC_SECRET_KEY
 
-aws s3 mb s3://rke2-sotc-tfstate \
+aws s3 mb s3://your-tfstate-bucket \
   --endpoint-url https://obs.eu-ch2.sc.otc.t-systems.com \
   --region eu-ch2
 ```

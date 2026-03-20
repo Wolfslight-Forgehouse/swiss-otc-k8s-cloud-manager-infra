@@ -31,7 +31,7 @@ nano terraform/environments/demo/terraform.tfvars
 
 ```bash
 # In OTC Console: Object Storage Service → Bucket erstellen
-# Name: rke2-sotc-tfstate
+# Name: your-tfstate-bucket
 # Region: eu-ch2
 # Access: Private
 ```

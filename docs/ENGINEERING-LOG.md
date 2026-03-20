@@ -101,7 +101,7 @@ https://obs.eu-ch2.sc.otc.t-systems.com
 
 ### Terraform State Backend (OBS)
 ```hcl
-bucket   = "rke2-sotc-tfstate"
+bucket   = "your-tfstate-bucket"
 key      = "rke2/terraform.tfstate"
 region   = "eu-ch2"
 endpoint = "https://obs.eu-ch2.sc.otc.t-systems.com"

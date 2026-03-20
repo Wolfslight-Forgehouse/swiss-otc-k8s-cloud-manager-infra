@@ -270,7 +270,7 @@ Remote State in OTC OBS (S3-kompatibel):
 ```hcl
 terraform {
   backend "s3" {
-    bucket   = "rke2-sotc-tfstate"
+    bucket   = "your-tfstate-bucket"
     key      = "rke2/terraform.tfstate"
     region   = "eu-ch2"
     endpoint = "https://obs.eu-ch2.otc.t-systems.com"
