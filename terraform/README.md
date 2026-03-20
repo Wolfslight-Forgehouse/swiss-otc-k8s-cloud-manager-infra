@@ -11,7 +11,7 @@
 
 ## Backend
 
-OTC Object Storage (OBS) — Bucket `rke2-sotc-tfstate` in eu-ch2.
+OTC Object Storage (OBS) — Bucket (konfigurierbar via `OBS_TFSTATE_BUCKET` Secret) in eu-ch2.
 
 ## Provider
 

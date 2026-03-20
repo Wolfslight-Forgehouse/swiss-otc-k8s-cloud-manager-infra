@@ -46,7 +46,11 @@ jobs:
           terraform_version: "1.7"
 
       - name: Terraform Init
-        run: terraform init
+        run: |
+          terraform init \
+            -backend-config="bucket=${{ secrets.OBS_TFSTATE_BUCKET }}" \
+            -backend-config="access_key=${{ secrets.OTC_ACCESS_KEY }}" \
+            -backend-config="secret_key=${{ secrets.OTC_SECRET_KEY }}" 
 
       - name: Pre-Destroy - Delete CCM ELBs via OTC API
         if: github.event.inputs.confirm == 'DESTROY'

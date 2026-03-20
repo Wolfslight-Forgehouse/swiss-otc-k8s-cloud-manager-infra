@@ -58,6 +58,7 @@ jobs:
       - name: Terraform Init
         run: |
           terraform init \
+            -backend-config="bucket=${{ secrets.OBS_TFSTATE_BUCKET }}" \
             -backend-config="access_key=${{ secrets.OTC_ACCESS_KEY }}" \
             -backend-config="secret_key=${{ secrets.OTC_SECRET_KEY }}"
 
@@ -177,7 +178,7 @@ jobs:
         run: |
           KEY=~/.ssh/rke2-key   # gleicher Pfad wie SSH Setup Step
           GEESEFS_VERSION="v0.42.4"
-          GEESEFS_URL="https://obs.eu-ch2.sc.otc.t-systems.com/rke2-sotc-tfstate/binaries/geesefs-linux-amd64-${GEESEFS_VERSION}"
+          GEESEFS_URL="https://obs.eu-ch2.sc.otc.t-systems.com/${{ secrets.OBS_TFSTATE_BUCKET }}/binaries/geesefs-linux-amd64-${GEESEFS_VERSION}"
 
           echo "⬇️  Downloading geesefs ${GEESEFS_VERSION} from OBS to runner..."
           HTTP=$(curl -sf \
