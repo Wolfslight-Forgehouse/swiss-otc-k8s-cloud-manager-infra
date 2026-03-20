@@ -60,13 +60,22 @@ jobs:
           OTC_PASSWORD:    ${{ secrets.OTC_PASSWORD }}
           OTC_DOMAIN_NAME: ${{ secrets.OTC_DOMAIN_NAME }}
           OTC_PROJECT_ID:  ${{ secrets.OTC_PROJECT_ID }}
+          OTC_ACCESS_KEY:  ${{ secrets.OTC_ACCESS_KEY }}
+          OTC_SECRET_KEY:  ${{ secrets.OTC_SECRET_KEY }}
         run: |
           # IAM Token holen
-          TOKEN=$(curl -sf -X POST \
+          echo "🔑 Getting IAM token for user=${OTC_USERNAME} domain=${OTC_DOMAIN_NAME} project=${OTC_PROJECT_ID}"
+          HTTP_RESP=$(curl -s -X POST \
             "https://iam-pub.eu-ch2.sc.otc.t-systems.com/v3/auth/tokens" \
             -H "Content-Type: application/json" \
+            -D /tmp/iam-headers.txt \
             -d '{"auth":{"identity":{"methods":["password"],"password":{"user":{"name":"'"${OTC_USERNAME}"'","password":"'"${OTC_PASSWORD}"'","domain":{"name":"'"${OTC_DOMAIN_NAME}"'"}}}},"scope":{"project":{"id":"'"${OTC_PROJECT_ID}"'"}}}}' \
-            -i 2>/dev/null | grep -i "x-subject-token" | awk '{print $2}' | tr -d '\r')
+            -w "%{http_code}" -o /tmp/iam-body.txt 2>/dev/null)
+          echo "  IAM HTTP status: $HTTP_RESP"
+          if [ "$HTTP_RESP" != "201" ]; then
+            echo "  IAM error: $(cat /tmp/iam-body.txt 2>/dev/null | head -1)"
+          fi
+          TOKEN=$(grep -i "x-subject-token" /tmp/iam-headers.txt 2>/dev/null | awk '{print $2}' | tr -d '\r')
 
           if [ -z "$TOKEN" ]; then
             echo "⚠️ Could not get IAM token — skipping ELB cleanup"
