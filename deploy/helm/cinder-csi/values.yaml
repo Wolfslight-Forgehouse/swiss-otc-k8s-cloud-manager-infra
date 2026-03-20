@@ -3,17 +3,8 @@
 
 secret:
   enabled: true
-  create: true
+  create: false
   name: cinder-csi-cloud-config
-  # Data wird via pipeline --set-string überschrieben
-  data:
-    cloud.conf: |
-      [Global]
-      auth-url=PLACEHOLDER
-      region=eu-ch2
-      access-key=PLACEHOLDER
-      secret-key=PLACEHOLDER
-      project-id=PLACEHOLDER
 
 storageClass:
   enabled: true

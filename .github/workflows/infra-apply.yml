@@ -316,9 +316,10 @@ jobs:
           OTC_PROJECT_ID: ${{ secrets.OTC_PROJECT_ID }}
           OTC_DOMAIN_NAME: ${{ secrets.OTC_DOMAIN_NAME }}
         run: |
-          # cloud.conf als Kubernetes Secret erstellen (INI format, Username/Password)
-          printf '[Global]\nauth-url=https://iam-pub.eu-ch2.sc.otc.t-systems.com/v3\nusername=%s\npassword=%s\nregion=eu-ch2\ntenant-id=%s\ndomain-name=%s\n' \
-            "${OTC_USERNAME}" "${OTC_PASSWORD}" "${OTC_PROJECT_ID}" "${OTC_DOMAIN_NAME}" \
+          # cloud.conf für Swiss OTC EVS (Cinder CSI)
+          # endpoint-override nötig: EVS = https://evs.eu-ch2.sc.otc.t-systems.com/v3
+          printf '[Global]\nauth-url=https://iam-pub.eu-ch2.sc.otc.t-systems.com/v3\nusername=%s\npassword=%s\nregion=eu-ch2\ntenant-id=%s\ndomain-name=%s\n\n[BlockStorage]\nbs-version=v3\nendpoint-override=https://evs.eu-ch2.sc.otc.t-systems.com/v3/%s\n' \
+            "${OTC_USERNAME}" "${OTC_PASSWORD}" "${OTC_PROJECT_ID}" "${OTC_DOMAIN_NAME}" "${OTC_PROJECT_ID}" \
             > /tmp/cinder-cloud.conf
 
           kubectl --insecure-skip-tls-verify create secret generic cinder-csi-cloud-config \
