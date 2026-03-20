@@ -171,14 +171,18 @@ jobs:
       # ── Wait for RKE2 ──────────────────────────────────
       - name: Install geesefs on all nodes (via SCP over Bastion)
         continue-on-error: true
+        env:
+          OTC_ACCESS_KEY: ${{ secrets.OTC_ACCESS_KEY }}
+          OTC_SECRET_KEY: ${{ secrets.OTC_SECRET_KEY }}
         run: |
+          KEY=~/.ssh/rke2-key   # gleicher Pfad wie SSH Setup Step
           GEESEFS_VERSION="v0.42.4"
           GEESEFS_URL="https://obs.eu-ch2.sc.otc.t-systems.com/rke2-sotc-tfstate/binaries/geesefs-linux-amd64-${GEESEFS_VERSION}"
 
           echo "⬇️  Downloading geesefs ${GEESEFS_VERSION} from OBS to runner..."
           HTTP=$(curl -sf \
             --aws-sigv4 "aws:amz:eu-ch2:s3" \
-            --user "${{ secrets.OTC_ACCESS_KEY }}:${{ secrets.OTC_SECRET_KEY }}" \
+            --user "${OTC_ACCESS_KEY}:${OTC_SECRET_KEY}" \
             -H "x-amz-content-sha256: UNSIGNED-PAYLOAD" \
             -w "%{http_code}" \
             "$GEESEFS_URL" \
@@ -191,32 +195,39 @@ jobs:
             exit 0
           fi
 
-          # Master
-          echo "📦 Installing geesefs on master (${MASTER_IP})..."
-          scp -o StrictHostKeyChecking=no \
-            -o ProxyCommand="ssh -o StrictHostKeyChecking=no -i /tmp/master-key -W %h:%p ubuntu@${BASTION_IP}" \
-            -i /tmp/master-key /tmp/geesefs ubuntu@${MASTER_IP}:/tmp/geesefs 2>/dev/null && \
-          ssh -o StrictHostKeyChecking=no -i /tmp/master-key ubuntu@${BASTION_IP} \
-            "ssh -o StrictHostKeyChecking=no -i /tmp/master-key ubuntu@${MASTER_IP} \
-            'sudo install -m 755 /tmp/geesefs /usr/local/bin/geesefs && \
-             sudo ln -sf /usr/local/bin/geesefs /usr/bin/geesefs && \
-             grep -q user_allow_other /etc/fuse.conf || echo user_allow_other | sudo tee -a /etc/fuse.conf && \
-             echo geesefs OK'" && echo "  ✅ master done" || echo "  ⚠️ master geesefs install failed"
+          # Hilfsfunktion: geesefs auf Node installieren (via Bastion als ProxyJump)
+          install_geesefs() {
+            local NODE_IP=$1
+            echo "📦 Installing geesefs on ${NODE_IP}..."
+            # Key auf Bastion hochladen (einmalig, idempotent)
+            scp -o StrictHostKeyChecking=no -i "$KEY" "$KEY" ubuntu@${BASTION_IP}:/tmp/rke2-key 2>/dev/null
+            ssh -o StrictHostKeyChecking=no -i "$KEY" ubuntu@${BASTION_IP} "chmod 600 /tmp/rke2-key" 2>/dev/null
+            # Binary über Bastion auf Node kopieren
+            scp -o StrictHostKeyChecking=no -i "$KEY" \
+              -o ProxyCommand="ssh -o StrictHostKeyChecking=no -i $KEY -W %h:%p ubuntu@${BASTION_IP}" \
+              /tmp/geesefs ubuntu@${NODE_IP}:/tmp/geesefs 2>/dev/null
+            # Auf Node installieren (via Bastion)
+            ssh -o StrictHostKeyChecking=no -i "$KEY" ubuntu@${BASTION_IP} \
+              "ssh -o StrictHostKeyChecking=no -i /tmp/rke2-key ubuntu@${NODE_IP} \
+              'sudo install -m755 /tmp/geesefs /usr/local/bin/geesefs && \
+               sudo ln -sf /usr/local/bin/geesefs /usr/bin/geesefs && \
+               grep -q user_allow_other /etc/fuse.conf 2>/dev/null || \
+               echo user_allow_other | sudo tee -a /etc/fuse.conf && \
+               geesefs --version 2>&1 | head -1'" 2>/dev/null \
+            && echo "  ✅ ${NODE_IP} geesefs OK" \
+            || echo "  ⚠️  ${NODE_IP} geesefs install failed"
+          }
 
-          # Workers
+          install_geesefs "${MASTER_IP}"
+
           WORKERS=$(echo "${WORKER_IPS_JSON}" | python3 -c "import sys,json; print(' '.join(json.load(sys.stdin)))" 2>/dev/null || echo "")
           for W_IP in $WORKERS; do
-            echo "📦 Installing geesefs on worker (${W_IP})..."
-            scp -o StrictHostKeyChecking=no \
-              -o ProxyCommand="ssh -o StrictHostKeyChecking=no -i /tmp/master-key -W %h:%p ubuntu@${BASTION_IP}" \
-              -i /tmp/master-key /tmp/geesefs ubuntu@${W_IP}:/tmp/geesefs 2>/dev/null && \
-            ssh -o StrictHostKeyChecking=no -i /tmp/master-key ubuntu@${BASTION_IP} \
-              "ssh -o StrictHostKeyChecking=no -i /tmp/master-key ubuntu@${W_IP} \
-              'sudo install -m 755 /tmp/geesefs /usr/local/bin/geesefs && \
-               sudo ln -sf /usr/local/bin/geesefs /usr/bin/geesefs && \
-               grep -q user_allow_other /etc/fuse.conf || echo user_allow_other | sudo tee -a /etc/fuse.conf && \
-               echo geesefs OK'" && echo "  ✅ ${W_IP} done" || echo "  ⚠️ ${W_IP} geesefs install failed"
+            install_geesefs "$W_IP"
           done
+
+          # CSI-S3 DaemonSet restart damit neue fuse.conf + geesefs gilt
+          kubectl --insecure-skip-tls-verify rollout restart daemonset/csi-s3 -n kube-system 2>/dev/null || true
+          echo "✅ geesefs install complete — CSI-S3 restarted"
 
       - name: Wait for RKE2 master ready
         run: |
