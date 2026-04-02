@@ -342,6 +342,10 @@ jobs:
             --set func.NP_IMPLEMENTATION=iptables \
             --set func.ENABLE_LB=true \
             --set func.ENABLE_NP=true \
+            --set "ovn-central.requests.cpu=100m" \
+            --set "ovn-central.requests.memory=100Mi" \
+            --set "ovn-central.limits.cpu=1" \
+            --set "ovn-central.limits.memory=1Gi" \
             --insecure-skip-tls-verify
 
           # Warte auf Kube-OVN pods
