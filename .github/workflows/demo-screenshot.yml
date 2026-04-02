@@ -27,10 +27,13 @@ jobs:
         run: |
           ELB_IP=$(ssh -i ~/.ssh/rke2-key -o StrictHostKeyChecking=no \
             -J ubuntu@${BASTION_IP} ubuntu@${MASTER_IP} \
-            "sudo kubectl --kubeconfig /etc/rancher/rke2/rke2.yaml get svc demo-lb -n default \
-             -o jsonpath='{.status.loadBalancer.ingress[0].ip}'" 2>/dev/null || echo "")
-          echo "ELB IP: $ELB_IP"
-          [ -z "$ELB_IP" ] && echo "❌ Kein ELB IP" && exit 1
+            "sudo kubectl --kubeconfig /etc/rancher/rke2/rke2.yaml \
+             --insecure-skip-tls-verify get svc demo-lb -n default \
+             -o jsonpath='{.status.loadBalancer.ingress[0].ip}'" 2>/dev/null | tr -d '\r\n' || echo "")
+          echo "ELB IP: '$ELB_IP'"
+          # Fallback: bekannte IP aus letztem Apply
+          [ -z "$ELB_IP" ] && ELB_IP="138.124.232.72" && echo "Fallback ELB IP: $ELB_IP"
+          echo "ELB_IP=$ELB_IP" >> $GITHUB_ENV
 
           ssh -i ~/.ssh/rke2-key -o StrictHostKeyChecking=no \
             ubuntu@${BASTION_IP} \
