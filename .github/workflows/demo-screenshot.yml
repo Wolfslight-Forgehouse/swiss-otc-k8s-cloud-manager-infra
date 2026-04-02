@@ -39,10 +39,10 @@ jobs:
       - name: port-forward demo-app Deployment
         run: |
           KUBECONFIG=/tmp/kubeconfig.yaml kubectl --insecure-skip-tls-verify \
-            port-forward deployment/demo-app 8080:80 -n default &
+            port-forward deployment/demo-app 9090:80 -n default &
           sleep 8
           for i in $(seq 1 20); do
-            HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" --max-time 3 http://localhost:8080 2>/dev/null || echo "0")
+            HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" --max-time 3 http://localhost:9090 2>/dev/null || echo "0")
             echo "  [$i/20] HTTP: $HTTP_CODE"
             [ "$HTTP_CODE" = "200" ] && echo "✅ Demo App ready!" && break
             sleep 3
@@ -57,7 +57,7 @@ jobs:
 
       - name: Screenshot
         run: |
-          SCREENSHOT_URL=http://localhost:8080 \
+          SCREENSHOT_URL=http://localhost:9090 \
           SCREENSHOT_OUT=/tmp/demo-app.png \
           node $GITHUB_WORKSPACE/scripts/screenshot.cjs
 
