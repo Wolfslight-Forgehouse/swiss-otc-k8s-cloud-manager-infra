@@ -113,3 +113,9 @@ variable "deploy_ingress_nginx" {
   description = "ingress-nginx deployen (nginx-internal immer, nginx-public wenn ccm_elb_eip = true)"
   default     = false
 }
+
+variable "cni_plugin" {
+  type        = string
+  description = "CNI plugin: 'cilium' (default) or 'kube-ovn'"
+  default     = "cilium"
+}

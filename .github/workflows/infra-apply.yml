@@ -308,6 +308,56 @@ jobs:
             -l app.kubernetes.io/name=swiss-otc-ccm
 
 
+
+      # ── Deploy Kube-OVN CNI (nur wenn CNI_PLUGIN=kube-ovn) ──────────────
+      - name: Deploy Kube-OVN CNI
+        if: ${{ vars.CNI_PLUGIN == 'kube-ovn' }}
+        run: |
+          echo "🌐 Deploying Kube-OVN CNI (overlay mode)..."
+          MASTER_IP_ESCAPED=$(echo "$MASTER_IP" | tr '.' ',')
+
+          helm repo add kubeovn https://kubeovn.github.io/kube-ovn
+          helm repo update
+
+          # Kube-OVN Overlay Mode — keine OTC VPC Abhängigkeiten
+          helm upgrade --install kube-ovn kubeovn/kube-ovn \
+            --namespace kube-system \
+            --version 1.13.0 \
+            --set replicaCount=1 \
+            --set MASTER_NODES="$MASTER_IP" \
+            --set networking.networkType=geneve \
+            --set networking.defaultSubnet=10.244.0.0/16 \
+            --set networking.defaultGateway=10.244.0.1 \
+            --set networking.joinSubnet=100.64.0.0/16 \
+            --set networking.nodeSwitchCIDR=100.64.0.0/16 \
+            --set func.NP_IMPLEMENTATION=iptables \
+            --set func.ENABLE_LB=true \
+            --set func.ENABLE_NP=true \
+            --insecure-skip-tls-verify
+
+          # Warte auf Kube-OVN pods
+          echo "⏳ Warte auf Kube-OVN pods..."
+          for i in $(seq 1 30); do
+            READY=$(kubectl --insecure-skip-tls-verify get pods -n kube-system \
+              -l app=kube-ovn-cni --no-headers 2>/dev/null | grep -c "Running" || echo "0")
+            echo "  [$i/30] kube-ovn-cni Running: ${READY}"
+            [ "${READY:-0}" -ge 1 ] && break
+            sleep 10
+          done
+
+          # Nodes sollten jetzt Ready werden
+          echo "⏳ Warte auf Node Ready..."
+          for i in $(seq 1 20); do
+            READY=$(kubectl --insecure-skip-tls-verify get nodes --no-headers 2>/dev/null | \
+              grep -c " Ready " || echo "0")
+            echo "  [$i/20] Ready nodes: ${READY}"
+            [ "${READY:-0}" -ge 1 ] && break
+            sleep 15
+          done
+
+          echo "✅ Kube-OVN deployed"
+          kubectl --insecure-skip-tls-verify get pods -n kube-system | grep -E "kube-ovn|ovn"
+
       # ── Deploy Cinder CSI (EVS Storage) ─────────────────
       - name: Deploy Cinder CSI (EVS PVC Support)
         env:

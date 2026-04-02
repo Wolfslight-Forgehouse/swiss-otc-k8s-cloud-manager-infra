@@ -42,6 +42,7 @@ resource "opentelekomcloud_compute_instance_v2" "master" {
     proxy_host     = var.proxy_host
     obs_access_key = var.obs_access_key
     obs_secret_key = var.obs_secret_key
+    cni_plugin     = var.cni_plugin
   }))
 
   lifecycle {

@@ -68,3 +68,13 @@ variable "obs_secret_key" {
   type        = string
   sensitive   = true
 }
+
+variable "cni_plugin" {
+  type        = string
+  description = "CNI plugin to use: 'cilium' (default, built-in) or 'kube-ovn' (deployed via pipeline)"
+  default     = "cilium"
+  validation {
+    condition     = contains(["cilium", "kube-ovn"], var.cni_plugin)
+    error_message = "cni_plugin must be 'cilium' or 'kube-ovn'."
+  }
+}

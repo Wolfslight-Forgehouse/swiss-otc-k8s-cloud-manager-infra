@@ -28,10 +28,22 @@ done
 # Install RKE2
 curl -sfL https://get.rke2.io | sh -
 
-# Configure RKE2 with Cilium CNI
 mkdir -p /etc/rancher/rke2
 MASTER_IP=$(hostname -I | awk '{print $1}')
 
+%{ if cni_plugin == "kube-ovn" }
+# ── Kube-OVN: RKE2 ohne built-in CNI, Kube-OVN via Pipeline deployen ──────
+cat > /etc/rancher/rke2/config.yaml <<CONFIG
+token: ${cluster_token}
+cloud-provider-name: external
+cni: none
+disable-kube-proxy: true
+tls-san:
+  - $MASTER_IP
+CONFIG
+echo "CNI: kube-ovn (pipeline will deploy after cluster ready)"
+%{ else }
+# ── Cilium: built-in RKE2 CNI mit kube-proxy replacement ──────────────────
 cat > /etc/rancher/rke2/config.yaml <<CONFIG
 token: ${cluster_token}
 cloud-provider-name: external
@@ -41,7 +53,7 @@ tls-san:
   - $MASTER_IP
 CONFIG
 
-# Cilium HelmChartConfig for kube-proxy replacement
+# Cilium HelmChartConfig
 mkdir -p /var/lib/rancher/rke2/server/manifests
 cat > /var/lib/rancher/rke2/server/manifests/rke2-cilium-config.yaml <<CILIUM
 apiVersion: helm.cattle.io/v1
@@ -62,14 +74,14 @@ spec:
       relay:
         enabled: true
 CILIUM
+echo "CNI: cilium (built-in)"
+%{ endif }
 
-
-# user_allow_other für FUSE mounts (CSI-S3 läuft als root aber braucht allow_other)
+# user_allow_other für FUSE mounts (CSI-S3)
 grep -q "^user_allow_other" /etc/fuse.conf || echo "user_allow_other" >> /etc/fuse.conf
-echo "geesefs $(geesefs --version 2>&1 || echo 'installed') ✅"
 
 # Start RKE2
 systemctl enable rke2-server.service
 systemctl start rke2-server.service
 
-echo "RKE2 master setup complete"
+echo "RKE2 master setup complete (CNI: ${cni_plugin})"
