@@ -18,6 +18,10 @@ graph TD
     L --> M[EVS Block Volume]
 ```
 
+## 🚀 Team Onboarding
+
+Neu im Projekt? Start hier: **[docs/TEAM-ONBOARDING.md](docs/TEAM-ONBOARDING.md)**
+
 ## Features
 
 - **Automatic ELB v3** — `type: LoadBalancer` → OTC Dedicated ELB, automatisch

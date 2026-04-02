@@ -5,7 +5,7 @@
 If you discover a security vulnerability in this project, please report it responsibly:
 
 1. **Do NOT** open a public issue
-2. Email: security@your-org.example.com
+2. Email: security@ghosttalker.de
 3. Include: description, steps to reproduce, potential impact
 
 We will respond within 48 hours and provide a fix timeline.

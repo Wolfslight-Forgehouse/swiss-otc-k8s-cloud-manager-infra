@@ -1,33 +1,63 @@
-# OTC Cloud Provider Configuration
-# This is used both as /etc/rancher/rke2/cloud.conf on nodes
-# and as Kubernetes Secret in kube-system namespace
+# OTC Cloud Provider Configuration — EXAMPLE TEMPLATE
+# =====================================================
+# ⚠️  DO NOT commit real values here.
+# 
+# How to use:
+#   1. Copy this file:      cp cloud-config.yaml cloud.conf
+#   2. Fill in your values (see comments below)
+#   3. Create as Secret:    
+#      kubectl create secret generic otc-cloud-config \
+#        --from-file=cloud.conf=./cloud.conf -n kube-system
+#   4. Delete cloud.conf:   rm cloud.conf
+#
+# In production, values are injected via GitHub Secrets (see infra-apply.yml)
+# and written to /etc/rancher/rke2/cloud.conf via cloud-init — never stored in Git.
 
-# Template — replace placeholders with actual values
-# To create as secret:
-#   kubectl create secret generic otc-cloud-config \
-#     --from-file=cloud.conf=./cloud.conf \
-#     -n kube-system
-
-# cloud.conf content:
 [Global]
-auth-url=https://iam.eu-ch2.otc.t-systems.com/v3
-username=<OTC_USERNAME>
-password=<OTC_PASSWORD>
-tenant-name=<OTC_TENANT_NAME>
-domain-name=<OTC_DOMAIN_NAME>
+# IAM endpoint for Swiss OTC (eu-ch2)
+auth-url=https://iam-pub.eu-ch2.sc.otc.t-systems.com/v3
+
+# Your OTC IAM username (not email)
+username=<YOUR_IAM_USERNAME>
+
+# ⚠️  Never put real password here — use AK/SK instead (see below)
+# For pipeline use: set OTC_SECRET_KEY GitHub Secret + use AK/SK auth
+# password=
+
+# AK/SK Authentication (recommended, no password needed)
+# access-key=<YOUR_AK>    # Set via GitHub Secret: OTC_ACCESS_KEY
+# secret-key=<YOUR_SK>    # Set via GitHub Secret: OTC_SECRET_KEY
+
+# OTC Project / Tenant
+tenant-name=<YOUR_PROJECT_NAME>
+domain-name=<YOUR_DOMAIN_NAME>
 region=eu-ch2
 
 [LoadBalancer]
-subnet-id=<OTC_ELB_SUBNET_ID>
-floating-network-id=<OTC_FLOATING_NETWORK_ID>
-network-id=<OTC_NETWORK_ID>
+# VPC Subnet ID where ELB will be created (from Terraform output)
+subnet-id=<YOUR_ELB_SUBNET_ID>
+
+# External network for Floating IPs
+floating-network-id=<YOUR_FLOATING_NETWORK_ID>
+network-id=<YOUR_VPC_NETWORK_ID>
+
+# Health monitor settings
 create-monitor=true
 monitor-delay=5s
 monitor-timeout=3s
 monitor-max-retries=3
+
 lb-method=ROUND_ROBIN
 lb-provider=vlb
+
+# ELBv3 (recommended for Swiss OTC)
+use-lb-version=v3
 
 [Networking]
 public-network-name=admin_external_net
 ipv6-support-disabled=true
+
+[BlockStorage]
+# EVS Cinder API endpoint (Swiss OTC eu-ch2)
+bs-version=v3
+# endpoint-override is set via Terraform cloud-init — not needed here manually
