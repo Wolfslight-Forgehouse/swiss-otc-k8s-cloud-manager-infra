@@ -209,7 +209,24 @@ jobs:
           $H repo add kubeovn https://kubeovn.github.io/kube-ovn 2>/dev/null || true
           $H repo update kubeovn 2>/dev/null || true
 
-          $H upgrade kube-ovn kubeovn/kube-ovn             --namespace kube-system             --version 1.13.0             --reuse-values             --set MASTER_NODES="$MASTER_IP_LOCAL"             --insecure-skip-tls-verify
+          # Helm Upgrade (ohne CPU --set, Helm ignoriert Hyphens in Key-Names)
+          $H upgrade kube-ovn kubeovn/kube-ovn \
+            --namespace kube-system \
+            --version 1.13.0 \
+            --reuse-values \
+            --set MASTER_NODES="$MASTER_IP_LOCAL" \
+            --insecure-skip-tls-verify
+
+          # Direktes kubectl patch für ovn-central CPU resources
+          echo "Patching ovn-central deployment CPU requests..."
+          # Erst prüfen welche Container es hat
+          $K get deployment ovn-central -n kube-system -o jsonpath='{range .spec.template.spec.containers[*]}{.name}: {.resources}{"\n"}{end}' 2>/dev/null
+
+          $K patch deployment ovn-central -n kube-system \
+            --type strategic \
+            --patch '{"spec":{"template":{"spec":{"containers":[{"name":"ovn-central","resources":{"requests":{"cpu":"100m","memory":"100Mi"},"limits":{"cpu":"1","memory":"1Gi"}}}]}}}}' \
+            2>/dev/null && echo "✅ ovn-central CPU patched" || echo "⚠️ strategic patch failed"
+
           echo "✅ Helm Upgrade done"
 
           echo ""
