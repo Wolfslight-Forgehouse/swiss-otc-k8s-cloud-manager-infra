@@ -3,8 +3,8 @@ on:
   workflow_dispatch:
     inputs:
       elb_ip:
-        description: "ELB External IP der Demo App"
-        required: true
+        description: "ELB External IP (nur zur Info, nicht verwendet)"
+        required: false
         default: "138.124.232.72"
 
 jobs:
@@ -14,55 +14,91 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Setup SSH Tunnel (Runner → Bastion → ELB)
+      - name: Setup SSH + kubectl port-forward via Tunnel
         env:
           SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
           BASTION_IP:      ${{ secrets.BASTION_IP }}
+          MASTER_IP:       ${{ secrets.MASTER_IP }}
         run: |
           mkdir -p ~/.ssh
           echo "$SSH_PRIVATE_KEY" > ~/.ssh/rke2-key
           chmod 600 ~/.ssh/rke2-key
           ssh-keyscan -H "$BASTION_IP" >> ~/.ssh/known_hosts 2>/dev/null || true
 
-          # Tunnel: localhost:8080 → ELB:80 via Bastion
-          ELB_IP="${{ inputs.elb_ip }}"
+          # Tunnel: localhost:6443 → master:6443 (für kubectl)
           ssh -i ~/.ssh/rke2-key \
             -o StrictHostKeyChecking=no \
             -o ExitOnForwardFailure=yes \
-            -fNL 8080:${ELB_IP}:80 \
+            -fNL 6443:${MASTER_IP}:6443 \
             ubuntu@${BASTION_IP}
+          echo "✅ kubectl Tunnel offen"
 
-          # Warten bis Tunnel steht
-          for i in $(seq 1 10); do
-            curl -sf --max-time 3 http://localhost:8080 > /dev/null 2>&1 && echo "✅ Tunnel ready" && break
-            echo "  [$i/10] warte auf Tunnel..."
+          # kubeconfig holen
+          ssh -i ~/.ssh/rke2-key \
+            -o StrictHostKeyChecking=no \
+            -J ubuntu@${BASTION_IP} \
+            ubuntu@${MASTER_IP} \
+            "sudo cat /etc/rancher/rke2/rke2.yaml" 2>/dev/null \
+            | sed 's|https://.*:6443|https://127.0.0.1:6443|g' \
+            > /tmp/kubeconfig.yaml
+          echo "✅ kubeconfig geholt"
+
+          # kubectl port-forward: Demo App Service → localhost:8080
+          KUBECONFIG=/tmp/kubeconfig.yaml kubectl --insecure-skip-tls-verify \
+            port-forward svc/demo-app 8080:80 -n default &
+          PF_PID=$!
+          echo "PF_PID=$PF_PID" >> $GITHUB_ENV
+
+          # Warten bis port-forward ready
+          for i in $(seq 1 15); do
+            curl -sf --max-time 3 http://localhost:8080 > /dev/null 2>&1 && echo "✅ Demo App erreichbar auf :8080" && break
+            echo "  [$i/15] warte auf port-forward..."
             sleep 3
           done
 
-      - name: Install Playwright + Screenshot via Tunnel
+      - name: Install Playwright
         run: |
-          cd /tmp
-          npm init -y > /dev/null 2>&1
+          cd /tmp && npm init -y > /dev/null 2>&1
           npm install playwright > /dev/null 2>&1
           npx playwright install chromium --with-deps > /dev/null 2>&1
+          echo "✅ Playwright ready"
 
-          # Screenshot via Tunnel auf localhost:8080
-          cat > screenshot.mjs << 'JS'
-          import { chromium } from './node_modules/playwright/index.js';
-          const browser = await chromium.launch({ args: ['--no-sandbox', '--disable-dev-shm-usage'] });
-          const page = await browser.newPage();
-          await page.setViewportSize({ width: 1280, height: 900 });
-          console.log('📸 Screenshot via SSH Tunnel: http://localhost:8080');
-          try {
-            await page.goto('http://localhost:8080', { timeout: 30000, waitUntil: 'networkidle' });
-          } catch {
-            await page.goto('http://localhost:8080', { timeout: 15000 });
-          }
-          await page.screenshot({ path: '/tmp/demo-app.png', fullPage: true });
-          console.log('✅ Screenshot gespeichert');
-          await browser.close();
-          JS
-          node screenshot.mjs
+      - name: Screenshot Demo App
+        run: |
+          cd /tmp
+          SCREENSHOT_URL=http://localhost:8080 node --experimental-vm-modules \
+            -e "
+const pw = require('/tmp/node_modules/playwright');
+(async () => {
+  const browser = await pw.chromium.launch({ args: ['--no-sandbox','--disable-dev-shm-usage'] });
+  const page = await browser.newPage();
+  await page.setViewportSize({ width: 1280, height: 900 });
+  console.log('📸 Screenshot: http://localhost:8080');
+  try {
+    await page.goto('http://localhost:8080', { timeout: 30000, waitUntil: 'networkidle' });
+  } catch(e) {
+    try { await page.goto('http://localhost:8080', { timeout: 15000 }); } catch {}
+  }
+  await page.screenshot({ path: '/tmp/demo-app.png', fullPage: true });
+  console.log('✅ Screenshot gespeichert');
+  await browser.close();
+})();" 2>/dev/null || \
+          node -e "
+const pw = require('/tmp/node_modules/playwright');
+(async () => {
+  const browser = await pw.chromium.launch({ args: ['--no-sandbox','--disable-dev-shm-usage'] });
+  const page = await browser.newPage();
+  await page.setViewportSize({ width: 1280, height: 900 });
+  console.log('📸 Screenshot: http://localhost:8080');
+  try {
+    await page.goto('http://localhost:8080', { timeout: 30000, waitUntil: 'networkidle' });
+  } catch(e) {
+    try { await page.goto('http://localhost:8080', { timeout: 15000 }); } catch {}
+  }
+  await page.screenshot({ path: '/tmp/demo-app.png', fullPage: true });
+  console.log('✅ Screenshot gespeichert');
+  await browser.close();
+})();"
 
       - name: Upload Screenshot
         uses: actions/upload-artifact@v4
