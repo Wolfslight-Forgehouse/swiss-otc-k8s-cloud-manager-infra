@@ -25,22 +25,9 @@ jobs:
             sleep 5
           done
 
-          # SSH Config mit ProxyJump (wie Apply Workflow)
-          cat > ~/.ssh/config << SSHCONF
-Host master
-  HostName ${MASTER_IP}
-  User ubuntu
-  IdentityFile ~/.ssh/rke2-key
-  StrictHostKeyChecking no
-  ProxyJump ubuntu@${BASTION_IP}
-  ConnectTimeout 15
-
-Host ${BASTION_IP}
-  User ubuntu
-  IdentityFile ~/.ssh/rke2-key
-  StrictHostKeyChecking no
-  ConnectTimeout 15
-SSHCONF
+          # SSH Config mit ProxyJump (via printf, YAML-sicher)
+          printf 'Host master\n  HostName %s\n  User ubuntu\n  IdentityFile ~/.ssh/rke2-key\n  StrictHostKeyChecking no\n  ProxyJump ubuntu@%s\n  ConnectTimeout 15\n\nHost %s\n  User ubuntu\n  IdentityFile ~/.ssh/rke2-key\n  StrictHostKeyChecking no\n  ConnectTimeout 15\n' \
+            "$MASTER_IP" "$BASTION_IP" "$BASTION_IP" > ~/.ssh/config
           chmod 600 ~/.ssh/config
 
           echo "✅ SSH key fingerprint: $(ssh-keygen -l -f ~/.ssh/rke2-key 2>/dev/null || echo INVALID)"
