@@ -9,69 +9,6 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Setup SSH
-        env:
-          SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
-          BASTION_IP:      ${{ secrets.BASTION_IP }}
-        run: |
-          mkdir -p ~/.ssh
-          echo "$SSH_PRIVATE_KEY" > ~/.ssh/rke2-key
-          chmod 600 ~/.ssh/rke2-key
-          ssh-keyscan -H "$BASTION_IP" >> ~/.ssh/known_hosts 2>/dev/null || true
-          echo "✅ SSH bereit"
-
-      - name: Fetch HTML from Master (kubectl exec + curl)
-        env:
-          BASTION_IP: ${{ secrets.BASTION_IP }}
-          MASTER_IP:  ${{ secrets.MASTER_IP }}
-        run: |
-          # ELB IP vom Master holen
-          ELB_IP=$(ssh -i ~/.ssh/rke2-key -o StrictHostKeyChecking=no \
-            -J ubuntu@${BASTION_IP} ubuntu@${MASTER_IP} \
-            "sudo kubectl --kubeconfig /etc/rancher/rke2/rke2.yaml \
-             --insecure-skip-tls-verify get svc demo-lb -n default \
-             -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null | tr -d '\r\n'" \
-            2>/dev/null || echo "138.124.232.72")
-          [ -z "$ELB_IP" ] && ELB_IP="138.124.232.72"
-          echo "ELB IP: $ELB_IP"
-
-          # HTML direkt vom Master-Pod holen (Pod ist im Cluster-Netz)
-          DEMO_POD=$(ssh -i ~/.ssh/rke2-key -o StrictHostKeyChecking=no \
-            -J ubuntu@${BASTION_IP} ubuntu@${MASTER_IP} \
-            "sudo kubectl --kubeconfig /etc/rancher/rke2/rke2.yaml \
-             --insecure-skip-tls-verify get pods -n default \
-             -l app=demo -o jsonpath='{.items[0].metadata.name}' 2>/dev/null" \
-            2>/dev/null || echo "")
-          echo "Demo Pod: $DEMO_POD"
-
-          # HTML aus ConfigMap lesen (kein curl nötig)
-          ssh -i ~/.ssh/rke2-key -o StrictHostKeyChecking=no \
-            -J ubuntu@${BASTION_IP} ubuntu@${MASTER_IP} \
-            "sudo kubectl --kubeconfig /etc/rancher/rke2/rke2.yaml \
-             --insecure-skip-tls-verify get configmap demo-html -n default \
-             -o jsonpath='{.data.index\.html}' 2>/dev/null" \
-            2>/dev/null > /tmp/demo-app.html
-
-          SIZE=$(wc -c < /tmp/demo-app.html)
-          if [ "$SIZE" -lt 100 ]; then
-            echo "⚠️ ConfigMap leer/nicht gefunden, fallback auf nginx cat"
-            # Fallback: Datei direkt im Container lesen
-            if [ -n "$DEMO_POD" ]; then
-              ssh -i ~/.ssh/rke2-key -o StrictHostKeyChecking=no \
-                -J ubuntu@${BASTION_IP} ubuntu@${MASTER_IP} \
-                "sudo kubectl --kubeconfig /etc/rancher/rke2/rke2.yaml \
-                 --insecure-skip-tls-verify exec -n default ${DEMO_POD} -c nginx \
-                 -- cat /usr/share/nginx/html/index.html 2>/dev/null" \
-                2>/dev/null > /tmp/demo-app.html
-            fi
-            SIZE=$(wc -c < /tmp/demo-app.html)
-          fi
-
-          SIZE=$(wc -c < /tmp/demo-app.html)
-          echo "✅ HTML: ${SIZE} bytes"
-          echo "ELB_IP=$ELB_IP" >> $GITHUB_ENV
-          head -3 /tmp/demo-app.html
-
       - name: Install Playwright
         run: |
           cd /tmp && npm init -y > /dev/null 2>&1
@@ -79,8 +16,10 @@ jobs:
           npx playwright install chromium --with-deps > /dev/null 2>&1
           echo "✅ Playwright ready"
 
-      - name: Screenshot
+      - name: Screenshot Demo App (from repo HTML)
         run: |
+          cp $GITHUB_WORKSPACE/scripts/demo-index.html /tmp/demo-app.html
+          echo "📄 HTML: $(wc -c < /tmp/demo-app.html) bytes"
           HTML_FILE=/tmp/demo-app.html \
           SCREENSHOT_OUT=/tmp/demo-app.png \
           node $GITHUB_WORKSPACE/scripts/screenshot.cjs
