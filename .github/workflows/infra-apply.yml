@@ -424,10 +424,13 @@ jobs:
 
           # Warten bis Controller vollständig bereit
           echo "⏳ Warte auf Cinder CSI Controller..."
-          for i in $(seq 1 20); do
-            CTRL_READY=$(kubectl --insecure-skip-tls-verify get pods -n kube-system \
+          for i in $(seq 1 30); do
+            # Controller hat 6 Container — warte bis alle ready (6/6)
+            CTRL_STATUS=$(kubectl --insecure-skip-tls-verify get pods -n kube-system \
               -l app=openstack-cinder-csi-controllerplugin --no-headers 2>/dev/null | \
-              grep -v "0/[0-9]" | grep -c "Running" || echo "0")
+              head -1 | awk '{print $2}')
+            CTRL_READY=$(echo "$CTRL_STATUS" | grep -c "^[1-9][0-9]*/[1-9]" || echo "0")
+            echo "  [$i/30] Controller status: ${CTRL_STATUS:-not found}" 
             echo "  [$i/20] Controller pods ready: ${CTRL_READY}"
             [ "${CTRL_READY:-0}" -ge 1 ] && break
             sleep 10

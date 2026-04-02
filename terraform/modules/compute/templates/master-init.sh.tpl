@@ -81,6 +81,18 @@ echo "CNI: cilium (built-in)"
 grep -q "^user_allow_other" /etc/fuse.conf || echo "user_allow_other" >> /etc/fuse.conf
 
 # Start RKE2
+# RKE2 Registry Mirror — bessere Erreichbarkeit von registry.k8s.io
+cat > /etc/rancher/rke2/registries.yaml << 'REGEOF'
+mirrors:
+  registry.k8s.io:
+    endpoint:
+      - "https://registry.k8s.io"
+  docker.io:
+    endpoint:
+      - "https://registry-1.docker.io"
+REGEOF
+chmod 600 /etc/rancher/rke2/registries.yaml
+
 systemctl enable rke2-server.service
 systemctl start rke2-server.service
 
