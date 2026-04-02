@@ -40,7 +40,7 @@ jobs:
           MASTER_IP:  ${{ secrets.MASTER_IP }}
         run: |
           ssh -F ~/.ssh/config master << 'REMOTE'
-          K="sudo kubectl --kubeconfig /etc/rancher/rke2/rke2.yaml --insecure-skip-tls-verify"
+          K="sudo /var/lib/rancher/rke2/bin/kubectl --kubeconfig /etc/rancher/rke2/rke2.yaml --insecure-skip-tls-verify"
 
           echo "=============================================="
           echo "  Kube-OVN CNI Validation Report"
