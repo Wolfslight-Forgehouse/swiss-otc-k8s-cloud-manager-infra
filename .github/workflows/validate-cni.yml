@@ -17,7 +17,32 @@ jobs:
           mkdir -p ~/.ssh
           echo "$SSH_PRIVATE_KEY_B64" | base64 -d > ~/.ssh/rke2-key
           chmod 600 ~/.ssh/rke2-key
-          ssh-keyscan -H "$BASTION_IP" >> ~/.ssh/known_hosts 2>/dev/null || true
+
+          # Bastion Host-Key zuverlässig holen (wie Apply Workflow)
+          for i in $(seq 1 6); do
+            ssh-keyscan -T 15 -H "$BASTION_IP" >> ~/.ssh/known_hosts 2>/dev/null && break
+            echo "  ssh-keyscan attempt $i failed, retrying..."
+            sleep 5
+          done
+
+          # SSH Config mit ProxyJump (wie Apply Workflow)
+          cat > ~/.ssh/config << SSHCONF
+Host master
+  HostName ${MASTER_IP}
+  User ubuntu
+  IdentityFile ~/.ssh/rke2-key
+  StrictHostKeyChecking no
+  ProxyJump ubuntu@${BASTION_IP}
+  ConnectTimeout 15
+
+Host ${BASTION_IP}
+  User ubuntu
+  IdentityFile ~/.ssh/rke2-key
+  StrictHostKeyChecking no
+  ConnectTimeout 15
+SSHCONF
+          chmod 600 ~/.ssh/config
+
           echo "✅ SSH key fingerprint: $(ssh-keygen -l -f ~/.ssh/rke2-key 2>/dev/null || echo INVALID)"
           echo "✅ SSH bereit"
 
@@ -26,8 +51,7 @@ jobs:
           BASTION_IP: ${{ secrets.BASTION_IP }}
           MASTER_IP:  ${{ secrets.MASTER_IP }}
         run: |
-          ssh -i ~/.ssh/rke2-key -o StrictHostKeyChecking=no \
-            -J ubuntu@${BASTION_IP} ubuntu@${MASTER_IP} << 'REMOTE'
+          ssh -F ~/.ssh/config master << 'REMOTE'
           K="sudo kubectl --kubeconfig /etc/rancher/rke2/rke2.yaml --insecure-skip-tls-verify"
 
           echo "=============================================="
