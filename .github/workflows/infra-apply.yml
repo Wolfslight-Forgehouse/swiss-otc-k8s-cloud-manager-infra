@@ -348,8 +348,18 @@ jobs:
             --set "ovn-central.limits.memory=1Gi" \
             --insecure-skip-tls-verify
 
+          # Bootstrap Fix: ovn-central CPU patch + CNI Pod Neustart
+          echo "⏳ Warte kurz auf Deployment..."
+          sleep 15
+
+          echo "Patching ovn-central CPU resources..."
+          kubectl --insecure-skip-tls-verify patch deployment ovn-central -n kube-system \
+            --type strategic \
+            --patch '{"spec":{"template":{"spec":{"containers":[{"name":"ovn-central","resources":{"requests":{"cpu":"100m","memory":"100Mi"},"limits":{"cpu":"1","memory":"1Gi"}}}]}}}}' \
+            2>/dev/null && echo "✅ ovn-central CPU patched" || echo "⚠️ patch attempt done"
+
           # Warte auf Kube-OVN pods
-          echo "⏳ Warte auf Kube-OVN pods..."
+          echo "⏳ Warte auf Kube-OVN pods..." 
           for i in $(seq 1 30); do
             READY=$(kubectl --insecure-skip-tls-verify get pods -n kube-system \
               -l app=kube-ovn-cni --no-headers 2>/dev/null | grep -c "Running" || echo "0")
