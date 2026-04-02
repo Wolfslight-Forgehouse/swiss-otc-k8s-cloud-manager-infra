@@ -230,8 +230,14 @@ jobs:
           echo "✅ Helm Upgrade done"
 
           echo ""
+          echo "=== Step 2b: Crashende CNI Pods neu starten (MaxBackoff reset) ==="
+          $K delete pods -n kube-system -l app=kube-ovn-cni 2>/dev/null && echo "✅ CNI Pods gelöscht, werden neu gestartet" || echo "⚠️ keine Pods gelöscht"
+          $K delete pods -n kube-system -l app=kube-ovn-controller 2>/dev/null && echo "✅ Controller Pod gelöscht" || true
+          sleep 5
+
+          echo ""
           echo "=== Step 3: OVN Central Pod beobachten ==="
-          for i in $(seq 1 20); do
+          for i in $(seq 1 30); do
             STATUS=$($K get pods -n kube-system | grep ovn-central | awk '{print $3}' | head -1)
             echo "  [$i/20] ovn-central: ${STATUS:-not found}"
             [ "$STATUS" = "Running" ] && break
@@ -240,7 +246,7 @@ jobs:
 
           echo ""
           echo "=== Step 4: CNI Pods ==="
-          for i in $(seq 1 20); do
+          for i in $(seq 1 30); do
             RUNNING=$($K get pods -n kube-system | grep "kube-ovn-cni" | grep -c "Running" || echo 0)
             TOTAL=$($K get pods -n kube-system | grep -c "kube-ovn-cni" || echo 0)
             echo "  [$i/20] kube-ovn-cni: $RUNNING/$TOTAL Running"
