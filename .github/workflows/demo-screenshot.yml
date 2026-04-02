@@ -36,7 +36,7 @@ jobs:
       - name: kubectl port-forward Demo App
         run: |
           KUBECONFIG=/tmp/kubeconfig.yaml kubectl --insecure-skip-tls-verify \
-            port-forward svc/demo-app 8080:80 -n default &
+            port-forward svc/demo-lb 8080:80 -n default &
           sleep 5
           for i in $(seq 1 15); do
             curl -sf --max-time 3 http://localhost:8080 > /dev/null 2>&1 \
