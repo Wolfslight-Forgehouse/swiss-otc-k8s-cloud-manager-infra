@@ -16,42 +16,54 @@ jobs:
           chmod 600 ~/.ssh/rke2-key
           ssh-keyscan -H "${{ secrets.BASTION_IP }}" >> ~/.ssh/known_hosts 2>/dev/null || true
 
-      - name: Get ELB IP + Take Screenshot
+      - name: Get ELB IP via SSH tunnel
         env:
           BASTION_IP: ${{ secrets.BASTION_IP }}
           MASTER_IP:  ${{ secrets.MASTER_IP }}
         run: |
-          # SSH Tunnel: localhost:8080 → ELB über Bastion
           ELB_IP=$(ssh -i ~/.ssh/rke2-key \
             -o StrictHostKeyChecking=no \
-            -o ProxyJump="ubuntu@${BASTION_IP}" \
+            -o ConnectTimeout=15 \
+            -J "ubuntu@${BASTION_IP}" \
             "ubuntu@${MASTER_IP}" \
-            "kubectl --kubeconfig /etc/rancher/rke2/rke2.yaml get svc -n default -o jsonpath='{.items[?(@.spec.type==\"LoadBalancer\")].status.loadBalancer.ingress[0].ip}' 2>/dev/null" 2>/dev/null || echo "")
+            "sudo kubectl --kubeconfig /etc/rancher/rke2/rke2.yaml get svc -n default \
+              -o jsonpath='{.items[?(@.spec.type==\"LoadBalancer\")].status.loadBalancer.ingress[0].ip}' \
+              2>/dev/null" 2>/dev/null || echo "")
           echo "ELB IP: $ELB_IP"
           echo "ELB_IP=$ELB_IP" >> $GITHUB_ENV
 
-          # Playwright installieren
-          npm install -g playwright
+      - name: Install Playwright
+        run: |
+          mkdir -p /tmp/pw && cd /tmp/pw
+          npm init -y
+          npm install playwright
           npx playwright install chromium --with-deps
 
       - name: Screenshot Demo App
         run: |
-          cat > /tmp/screenshot.mjs << 'JS'
-          import { chromium } from 'playwright';
+          cd /tmp/pw
+          cat > screenshot.mjs << JS
+          import { chromium } from './node_modules/playwright/index.mjs';
           const browser = await chromium.launch();
           const page = await browser.newPage();
           await page.setViewportSize({ width: 1280, height: 900 });
-          const url = `http://${process.env.ELB_IP}`;
-          console.log(`Opening: ${url}`);
-          await page.goto(url, { timeout: 30000, waitUntil: 'networkidle' });
-          await page.screenshot({ path: 'demo-app.png', fullPage: true });
+          const url = \`http://${process.env.ELB_IP}\`;
+          console.log(\`📸 Screenshotting: \${url}\`);
+          try {
+            await page.goto(url, { timeout: 30000, waitUntil: 'networkidle' });
+          } catch (e) {
+            console.log('networkidle timeout, taking screenshot anyway');
+            await page.goto(url, { timeout: 15000 });
+          }
+          await page.screenshot({ path: '/tmp/demo-app.png', fullPage: true });
+          console.log('✅ Screenshot saved');
           await browser.close();
           JS
-          node /tmp/screenshot.mjs
+          node screenshot.mjs
 
       - name: Upload Screenshot
         uses: actions/upload-artifact@v4
         with:
           name: demo-app-screenshot
-          path: demo-app.png
+          path: /tmp/demo-app.png
           retention-days: 7
