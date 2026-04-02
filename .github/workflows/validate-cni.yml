@@ -9,94 +9,95 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Setup SSH + kubectl Tunnel
+      - name: Setup SSH
         env:
           SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
           BASTION_IP:      ${{ secrets.BASTION_IP }}
-          MASTER_IP:       ${{ secrets.MASTER_IP }}
         run: |
           mkdir -p ~/.ssh
           echo "$SSH_PRIVATE_KEY" > ~/.ssh/rke2-key
           chmod 600 ~/.ssh/rke2-key
           ssh-keyscan -H "$BASTION_IP" >> ~/.ssh/known_hosts 2>/dev/null || true
+          echo "✅ SSH bereit"
 
-          ssh -i ~/.ssh/rke2-key -o StrictHostKeyChecking=no \
-            -o ExitOnForwardFailure=yes -fNL 6443:${MASTER_IP}:6443 \
-            ubuntu@${BASTION_IP}
-
-          ssh -i ~/.ssh/rke2-key -o StrictHostKeyChecking=no \
-            -J ubuntu@${BASTION_IP} ubuntu@${MASTER_IP} \
-            "sudo cat /etc/rancher/rke2/rke2.yaml" 2>/dev/null \
-            | sed 's|https://.*:6443|https://127.0.0.1:6443|g' \
-            > /tmp/kubeconfig.yaml
-          echo "✅ Tunnel + kubeconfig"
-
-      - name: Kube-OVN Component Status
+      - name: Validate Kube-OVN on Master
+        env:
+          BASTION_IP: ${{ secrets.BASTION_IP }}
+          MASTER_IP:  ${{ secrets.MASTER_IP }}
         run: |
-          K="kubectl --kubeconfig /tmp/kubeconfig.yaml --insecure-skip-tls-verify"
-          echo "=== Kube-OVN Pods ==="
-          $K get pods -n kube-system -o wide | grep -E "kube-ovn|ovn" || echo "keine pods"
+          ssh -i ~/.ssh/rke2-key -o StrictHostKeyChecking=no \
+            -J ubuntu@${BASTION_IP} ubuntu@${MASTER_IP} << 'REMOTE'
+          K="sudo kubectl --kubeconfig /etc/rancher/rke2/rke2.yaml --insecure-skip-tls-verify"
+
+          echo "=============================================="
+          echo "  Kube-OVN CNI Validation Report"
+          echo "  $(date)"
+          echo "=============================================="
 
           echo ""
           echo "=== Nodes ==="
           $K get nodes -o wide
 
           echo ""
+          echo "=== Kube-OVN Pods ==="
+          $K get pods -n kube-system | grep -E "kube-ovn|ovn"
+
+          echo ""
           echo "=== Kube-OVN Subnets ==="
-          $K get subnet 2>/dev/null || echo "(CRD nicht verfügbar)"
+          $K get subnet 2>/dev/null || echo "(keine Subnet CRD)"
 
           echo ""
-          echo "=== IP Pools ==="
-          $K get ip 2>/dev/null | head -10 || echo "(kein IP CRD)"
-
-      - name: Pod-to-Pod Connectivity Test
-        run: |
-          K="kubectl --kubeconfig /tmp/kubeconfig.yaml --insecure-skip-tls-verify"
-
-          echo "=== Test Pods starten ==="
+          echo "=== Pod-to-Pod Connectivity Test ==="
           $K run test-a --image=busybox:latest --restart=Never \
-            --command -- sleep 120 2>/dev/null || true
+            --command -- sleep 60 2>/dev/null || true
           $K run test-b --image=busybox:latest --restart=Never \
-            --command -- sleep 120 2>/dev/null || true
+            --command -- sleep 60 2>/dev/null || true
+          sleep 12
 
-          sleep 15
-          $K get pods test-a test-b -o wide 2>/dev/null
-
-          echo ""
-          echo "=== IP von test-b holen ==="
           IP_B=$($K get pod test-b -o jsonpath='{.status.podIP}' 2>/dev/null || echo "")
           echo "test-b IP: $IP_B"
 
           if [ -n "$IP_B" ]; then
-            echo "=== Ping test-a → test-b ==="
-            $K exec test-a -- ping -c3 -W2 $IP_B 2>/dev/null && \
-              echo "✅ Pod-to-Pod Ping OK" || echo "❌ Ping fehlgeschlagen"
+            $K exec test-a -- ping -c3 -W2 "$IP_B" 2>/dev/null && \
+              echo "✅ Pod-to-Pod: OK" || echo "❌ Pod-to-Pod: FAIL"
           fi
 
           echo ""
-          echo "=== DNS Resolution ==="
+          echo "=== DNS Test ==="
           $K exec test-a -- nslookup kubernetes.default 2>/dev/null && \
-            echo "✅ DNS OK" || echo "❌ DNS fehlgeschlagen"
+            echo "✅ DNS: OK" || echo "❌ DNS: FAIL"
+
+          echo ""
+          echo "=== Services ==="
+          $K get svc -n default
+
+          echo ""
+          echo "=== PVCs ==="
+          $K get pvc -n default
 
           echo ""
           echo "=== Cleanup ==="
           $K delete pod test-a test-b --ignore-not-found 2>/dev/null
-          echo "✅ Cleanup done"
+          echo "✅ Done"
+          REMOTE
 
-      - name: Service Connectivity Test
+      - name: Kube-OVN Overlay vs Underlay Summary
         run: |
-          K="kubectl --kubeconfig /tmp/kubeconfig.yaml --insecure-skip-tls-verify"
-          echo "=== Demo App Service ==="
-          $K get svc -n default
-
+          echo "=============================================="
+          echo "  Overlay (Geneve) vs Underlay — Bewertung"
+          echo "=============================================="
           echo ""
-          echo "=== LoadBalancer Status ==="
-          $K get svc -n default -o jsonpath='{range .items[?(@.spec.type=="LoadBalancer")]}{.metadata.name}: {.status.loadBalancer.ingress[0].ip}{"\n"}{end}'
-
+          echo "Overlay (aktuell, Geneve):"
+          echo "  ✅ Kein OTC VPC Routing nötig"
+          echo "  ✅ Vollständige Network Policies"
+          echo "  ✅ Einfache Installation"
+          echo "  ⚠️  Leichter MTU-Overhead (~50 bytes)"
           echo ""
-          echo "=== EVS PVC Status ==="
-          $K get pvc -n default
-
+          echo "Underlay (OTC VPC native):"
+          echo "  ✅ Pods bekommen direkte VPC IPs"
+          echo "  ✅ Kein Overlay-Overhead"
+          echo "  ❌ Braucht OTC Neutron Port-Security Anpassung"
+          echo "  ❌ Aufwändig: Custom Routes pro Node in Terraform"
           echo ""
-          echo "=== Pod Status ==="
-          $K get pods -n default -o wide
+          echo "Empfehlung: Overlay reicht für Production."
+          echo "Underlay nur wenn: direkte VPC-IP für Pods oder max. Performance nötig."
