@@ -9,44 +9,41 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Setup SSH Tunnel + kubeconfig
+      - name: Setup SSH
         env:
           SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
           BASTION_IP:      ${{ secrets.BASTION_IP }}
-          MASTER_IP:       ${{ secrets.MASTER_IP }}
         run: |
           mkdir -p ~/.ssh
           echo "$SSH_PRIVATE_KEY" > ~/.ssh/rke2-key
           chmod 600 ~/.ssh/rke2-key
           ssh-keyscan -H "$BASTION_IP" >> ~/.ssh/known_hosts 2>/dev/null || true
+          echo "✅ SSH bereit"
 
-          ssh -i ~/.ssh/rke2-key -o StrictHostKeyChecking=no \
-            -o ExitOnForwardFailure=yes -fNL 6443:${MASTER_IP}:6443 \
-            ubuntu@${BASTION_IP}
-          echo "✅ kubectl Tunnel offen"
-
-          ssh -i ~/.ssh/rke2-key -o StrictHostKeyChecking=no \
-            -J ubuntu@${BASTION_IP} ubuntu@${MASTER_IP} \
-            "sudo cat /etc/rancher/rke2/rke2.yaml" 2>/dev/null \
-            | sed 's|https://.*:6443|https://127.0.0.1:6443|g' \
-            > /tmp/kubeconfig.yaml
-          echo "✅ kubeconfig geholt"
-
-          # Services + Pods anzeigen
-          KUBECONFIG=/tmp/kubeconfig.yaml kubectl --insecure-skip-tls-verify \
-            get svc,pods -n default -o wide 2>/dev/null || true
-
-      - name: port-forward demo-app Deployment
+      - name: Fetch Demo App HTML via Bastion
+        env:
+          BASTION_IP: ${{ secrets.BASTION_IP }}
+          MASTER_IP:  ${{ secrets.MASTER_IP }}
         run: |
-          KUBECONFIG=/tmp/kubeconfig.yaml kubectl --insecure-skip-tls-verify \
-            port-forward deployment/demo-app 9090:80 -n default &
-          sleep 8
-          for i in $(seq 1 20); do
-            HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" --max-time 3 http://localhost:9090 2>/dev/null || echo "0")
-            echo "  [$i/20] HTTP: $HTTP_CODE"
-            [ "$HTTP_CODE" = "200" ] && echo "✅ Demo App ready!" && break
-            sleep 3
-          done
+          # ELB IP aus Terraform Output (aus dem letzten Apply)
+          # Bastion ist im VPC und kann die ELB IP direkt erreichen
+          ELB_IP=$(ssh -i ~/.ssh/rke2-key -o StrictHostKeyChecking=no \
+            -J ubuntu@${BASTION_IP} ubuntu@${MASTER_IP} \
+            "sudo kubectl --kubeconfig /etc/rancher/rke2/rke2.yaml get svc demo-lb -n default \
+             -o jsonpath='{.status.loadBalancer.ingress[0].ip}'" 2>/dev/null || echo "")
+          echo "ELB IP: $ELB_IP"
+
+          if [ -z "$ELB_IP" ]; then
+            echo "❌ Kein ELB IP gefunden"
+            exit 1
+          fi
+
+          # HTML via Bastion abrufen (Bastion ist im VPC)
+          ssh -i ~/.ssh/rke2-key -o StrictHostKeyChecking=no \
+            ubuntu@${BASTION_IP} \
+            "curl -sf --max-time 10 http://${ELB_IP}" > /tmp/demo-app.html
+          echo "✅ HTML geholt ($(wc -c < /tmp/demo-app.html) bytes)"
+          echo "ELB_IP=$ELB_IP" >> $GITHUB_ENV
 
       - name: Install Playwright
         run: |
@@ -55,11 +52,27 @@ jobs:
           npx playwright install chromium --with-deps > /dev/null 2>&1
           echo "✅ Playwright ready"
 
-      - name: Screenshot
+      - name: Screenshot (lokale HTML-Datei)
         run: |
-          SCREENSHOT_URL=http://localhost:9090 \
-          SCREENSHOT_OUT=/tmp/demo-app.png \
-          node $GITHUB_WORKSPACE/scripts/screenshot.cjs
+          node -e "
+const pw = require('/tmp/node_modules/playwright');
+const path = require('path');
+const fs = require('fs');
+(async () => {
+  // HTML lokal als file:// öffnen
+  const htmlPath = path.resolve('/tmp/demo-app.html');
+  const url = 'file://' + htmlPath;
+  console.log('📸 Rendering: ' + url);
+  const browser = await pw.chromium.launch({ args: ['--no-sandbox','--disable-dev-shm-usage'] });
+  const page = await browser.newPage();
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await page.goto(url, { waitUntil: 'domcontentloaded' });
+  await page.waitForTimeout(2000);
+  await page.screenshot({ path: '/tmp/demo-app.png', fullPage: true });
+  console.log('✅ Screenshot: /tmp/demo-app.png');
+  await browser.close();
+})();
+"
 
       - name: Upload Screenshot
         uses: actions/upload-artifact@v4
