@@ -1,11 +1,6 @@
 name: Demo App Screenshot
 on:
   workflow_dispatch:
-    inputs:
-      elb_ip:
-        description: "ELB External IP (nur zur Info, nicht verwendet)"
-        required: false
-        default: "138.124.232.72"
 
 jobs:
   screenshot:
@@ -14,7 +9,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Setup SSH + kubectl port-forward via Tunnel
+      - name: Setup SSH Tunnel (kubectl API)
         env:
           SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
           BASTION_IP:      ${{ secrets.BASTION_IP }}
@@ -25,80 +20,42 @@ jobs:
           chmod 600 ~/.ssh/rke2-key
           ssh-keyscan -H "$BASTION_IP" >> ~/.ssh/known_hosts 2>/dev/null || true
 
-          # Tunnel: localhost:6443 → master:6443 (für kubectl)
-          ssh -i ~/.ssh/rke2-key \
-            -o StrictHostKeyChecking=no \
+          ssh -i ~/.ssh/rke2-key -o StrictHostKeyChecking=no \
             -o ExitOnForwardFailure=yes \
             -fNL 6443:${MASTER_IP}:6443 \
             ubuntu@${BASTION_IP}
-          echo "✅ kubectl Tunnel offen"
+          echo "✅ Tunnel offen"
 
-          # kubeconfig holen
-          ssh -i ~/.ssh/rke2-key \
-            -o StrictHostKeyChecking=no \
-            -J ubuntu@${BASTION_IP} \
-            ubuntu@${MASTER_IP} \
+          ssh -i ~/.ssh/rke2-key -o StrictHostKeyChecking=no \
+            -J ubuntu@${BASTION_IP} ubuntu@${MASTER_IP} \
             "sudo cat /etc/rancher/rke2/rke2.yaml" 2>/dev/null \
             | sed 's|https://.*:6443|https://127.0.0.1:6443|g' \
             > /tmp/kubeconfig.yaml
           echo "✅ kubeconfig geholt"
 
-          # kubectl port-forward: Demo App Service → localhost:8080
+      - name: kubectl port-forward Demo App
+        run: |
           KUBECONFIG=/tmp/kubeconfig.yaml kubectl --insecure-skip-tls-verify \
             port-forward svc/demo-app 8080:80 -n default &
-          PF_PID=$!
-          echo "PF_PID=$PF_PID" >> $GITHUB_ENV
-
-          # Warten bis port-forward ready
+          sleep 5
           for i in $(seq 1 15); do
-            curl -sf --max-time 3 http://localhost:8080 > /dev/null 2>&1 && echo "✅ Demo App erreichbar auf :8080" && break
-            echo "  [$i/15] warte auf port-forward..."
+            curl -sf --max-time 3 http://localhost:8080 > /dev/null 2>&1 \
+              && echo "✅ Demo App erreichbar" && break
+            echo "  [$i/15] warte..."
             sleep 3
           done
 
       - name: Install Playwright
         run: |
-          cd /tmp && npm init -y > /dev/null 2>&1
+          cd /tmp
+          npm init -y > /dev/null 2>&1
           npm install playwright > /dev/null 2>&1
           npx playwright install chromium --with-deps > /dev/null 2>&1
           echo "✅ Playwright ready"
 
-      - name: Screenshot Demo App
+      - name: Screenshot
         run: |
-          cd /tmp
-          SCREENSHOT_URL=http://localhost:8080 node --experimental-vm-modules \
-            -e "
-const pw = require('/tmp/node_modules/playwright');
-(async () => {
-  const browser = await pw.chromium.launch({ args: ['--no-sandbox','--disable-dev-shm-usage'] });
-  const page = await browser.newPage();
-  await page.setViewportSize({ width: 1280, height: 900 });
-  console.log('📸 Screenshot: http://localhost:8080');
-  try {
-    await page.goto('http://localhost:8080', { timeout: 30000, waitUntil: 'networkidle' });
-  } catch(e) {
-    try { await page.goto('http://localhost:8080', { timeout: 15000 }); } catch {}
-  }
-  await page.screenshot({ path: '/tmp/demo-app.png', fullPage: true });
-  console.log('✅ Screenshot gespeichert');
-  await browser.close();
-})();" 2>/dev/null || \
-          node -e "
-const pw = require('/tmp/node_modules/playwright');
-(async () => {
-  const browser = await pw.chromium.launch({ args: ['--no-sandbox','--disable-dev-shm-usage'] });
-  const page = await browser.newPage();
-  await page.setViewportSize({ width: 1280, height: 900 });
-  console.log('📸 Screenshot: http://localhost:8080');
-  try {
-    await page.goto('http://localhost:8080', { timeout: 30000, waitUntil: 'networkidle' });
-  } catch(e) {
-    try { await page.goto('http://localhost:8080', { timeout: 15000 }); } catch {}
-  }
-  await page.screenshot({ path: '/tmp/demo-app.png', fullPage: true });
-  console.log('✅ Screenshot gespeichert');
-  await browser.close();
-})();"
+          SCREENSHOT_URL=http://localhost:8080 node $GITHUB_WORKSPACE/scripts/screenshot.cjs
 
       - name: Upload Screenshot
         uses: actions/upload-artifact@v4
@@ -106,4 +63,3 @@ const pw = require('/tmp/node_modules/playwright');
           name: demo-app-screenshot
           path: /tmp/demo-app.png
           retention-days: 14
-# Workflow Cache Bust Thu Apr  2 11:20:17 AM CEST 2026
