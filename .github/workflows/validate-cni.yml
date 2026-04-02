@@ -11,11 +11,11 @@ jobs:
 
       - name: Setup SSH
         env:
-          SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+          SSH_PRIVATE_KEY_B64: ${{ secrets.SSH_PRIVATE_KEY_B64 }}
           BASTION_IP:      ${{ secrets.BASTION_IP }}
         run: |
           mkdir -p ~/.ssh
-          echo "$SSH_PRIVATE_KEY" > ~/.ssh/rke2-key
+          echo "$SSH_PRIVATE_KEY_B64" | base64 -d > ~/.ssh/rke2-key
           chmod 600 ~/.ssh/rke2-key
           ssh-keyscan -H "$BASTION_IP" >> ~/.ssh/known_hosts 2>/dev/null || true
           echo "✅ SSH bereit"
