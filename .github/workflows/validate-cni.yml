@@ -271,11 +271,17 @@ jobs:
 
           echo ""
           echo "=== ovn-central describe ==="
-          OVN_POD=$($K get pod -n kube-system -l component=ovn-central -o name 2>/dev/null | head -1)
+          OVN_POD=$($K get pod -n kube-system -l app=ovn-central -o name 2>/dev/null | head -1)
+          [ -z "$OVN_POD" ] && OVN_POD=$($K get pod -n kube-system --no-headers 2>/dev/null | grep "ovn-central" | awk '{print "pod/" $1}'| head -1)
           echo "Pod: $OVN_POD"
           [ -n "$OVN_POD" ] && $K describe $OVN_POD -n kube-system 2>/dev/null | tail -30
 
           echo ""
           echo "=== Helm Values ovn-central ==="
-          $K get pod -n kube-system -l component=ovn-central -o yaml 2>/dev/null | grep -A5 "nodeSelector\|tolerations\|affinity" | head -20
+          echo ""
+          echo "=== Events für ovn-central ==="
+          $K get events -n kube-system --field-selector involvedObject.name=ovn-central-7f8b475d6d-xh5j6 2>/dev/null | tail -10
+          echo ""
+          echo "=== ovn-central Deployment nodeSelector ==="
+          $K get deployment ovn-central -n kube-system -o yaml 2>/dev/null | grep -A10 "nodeSelector\|tolerations" | head -20
           REMOTE
