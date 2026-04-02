@@ -40,7 +40,7 @@ jobs:
             -J ubuntu@${BASTION_IP} ubuntu@${MASTER_IP} \
             "sudo kubectl --kubeconfig /etc/rancher/rke2/rke2.yaml \
              --insecure-skip-tls-verify get pods -n default \
-             -l app=demo-app -o jsonpath='{.items[0].metadata.name}' 2>/dev/null" \
+             -l app=demo -o jsonpath='{.items[0].metadata.name}' 2>/dev/null" \
             2>/dev/null || echo "")
           echo "Demo Pod: $DEMO_POD"
 
