@@ -115,3 +115,64 @@ Fixiert auf `v1.34.5+rke2r1` — Upgrade erfordert neues cloud-init + rolling re
 OTC Dedicated ELB nutzt SNAT-Range `100.125.0.0/16` für Health Checks.
 **Ohne** Security Group Rule für diese Range → NodePort Health Checks schlagen fehl → Pods `Unhealthy`.
 Security Group Regel ist in `modules/networking/main.tf` vorhanden (`elb_snat_tcp` + `elb_snat_udp`).
+
+---
+
+## 2026-04-02 — Kube-OVN Bootstrap-Debugging & Fix
+
+### Ausgangslage
+Kube-OVN Deploy (`infra-apply` Run `23888755782`) war initial erfolgreich (ELB `138.124.232.72` ✅, Nodes Ready).
+Nach ~30 Minuten: `kube-ovn-cni` und `kube-ovn-controller` crashen in `CrashLoopBackOff`.
+
+### Root Cause Analyse (3 gestapelte Probleme)
+
+**Problem 1: kube-ovn/role=master Label fehlt**
+- Kube-OVN nutzt `nodeSelector: kube-ovn/role=master` für `ovn-central`
+- RKE2 setzt dieses Label nicht automatisch
+- Symptom: `FailedScheduling: 0/3 nodes didn't match Pod's node affinity/selector`
+- Fix: Label vor Helm Install setzen (jetzt in Pipeline integriert)
+
+**Problem 2: Insufficient CPU auf s3.large.2**
+- Default CPU Request für `ovn-central`: `300m`
+- Master `s3.large.2` (2 vCPU) hat zu wenig freie CPU
+- Symptom: `1 Insufficient cpu, 2 node(s) didn't match selector`
+- Fix: `kubectl patch` — CPU Request auf `100m` reduziert
+
+**Problem 3: MaxBackoff nach 85+ Restarts**
+- CNI Pods waren nach langer CrashLoop im 5-Minuten-Backoff
+- Auch nach ovn-central Fix: keine spontane Erholung
+- Fix: `kubectl delete pods` für CNI + Controller → frische Pods ohne Backoff
+
+### Validierungs-Workflow
+Neu eingeführt: `.github/workflows/validate-cni.yml` (Workflow-ID `255300627`)
+
+Enthält Jobs:
+- `validate`: kubectl Status auf Master via SSH
+- `debug-ovn`: Logs von ovn-central, controller, CNI
+- `fix-ovn-bootstrap`: Live-Fix (Label + Patch + Pod-Delete)
+- `describe-ovn-central`: Scheduling Events für Diagnose
+
+### SSH-Debugging (Runner → Bastion → Master)
+Erkenntnisse für GitHub Actions Workflows:
+- Kein Heredoc (`<< EOF`) in `run:` Blöcken — YAML-Parser bricht
+- Stattdessen: `printf` für SSH Config
+- `MASTER_IP` muss explizit im `env:` des Steps deklariert sein
+- kubectl Pfad auf RKE2: `/var/lib/rancher/rke2/bin/kubectl`
+- SSH Config mit ProxyJump zuverlässiger als `-J` inline
+
+### Finaler Status (nach Fix)
+```
+ovn-central:         1/1 Running ✅
+kube-ovn-cni:        3/3 Running ✅ (0 Restarts)
+kube-ovn-controller: 1/1 Running ✅
+ovs-ovn:             3/3 Running ✅
+Nodes:               3/3 Ready  ✅
+ELB:                 138.124.232.72 ✅
+```
+
+### Fixes in Pipeline integriert (commit c8a9581)
+Reihenfolge im Deploy-Step:
+1. `kubectl label node <master> kube-ovn/role=master`
+2. `helm install kube-ovn ...`
+3. `kubectl patch deployment ovn-central` (CPU 100m)
+4. Warten auf Pods
