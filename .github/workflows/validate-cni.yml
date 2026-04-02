@@ -18,6 +18,7 @@ jobs:
           echo "$SSH_PRIVATE_KEY_B64" | base64 -d > ~/.ssh/rke2-key
           chmod 600 ~/.ssh/rke2-key
           ssh-keyscan -H "$BASTION_IP" >> ~/.ssh/known_hosts 2>/dev/null || true
+          echo "✅ SSH key fingerprint: $(ssh-keygen -l -f ~/.ssh/rke2-key 2>/dev/null || echo INVALID)"
           echo "✅ SSH bereit"
 
       - name: Validate Kube-OVN on Master
