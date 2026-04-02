@@ -9,7 +9,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Setup SSH Tunnel (kubectl API)
+      - name: Setup SSH Tunnel + kubeconfig
         env:
           SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
           BASTION_IP:      ${{ secrets.BASTION_IP }}
@@ -21,10 +21,9 @@ jobs:
           ssh-keyscan -H "$BASTION_IP" >> ~/.ssh/known_hosts 2>/dev/null || true
 
           ssh -i ~/.ssh/rke2-key -o StrictHostKeyChecking=no \
-            -o ExitOnForwardFailure=yes \
-            -fNL 6443:${MASTER_IP}:6443 \
+            -o ExitOnForwardFailure=yes -fNL 6443:${MASTER_IP}:6443 \
             ubuntu@${BASTION_IP}
-          echo "✅ Tunnel offen"
+          echo "✅ kubectl Tunnel offen"
 
           ssh -i ~/.ssh/rke2-key -o StrictHostKeyChecking=no \
             -J ubuntu@${BASTION_IP} ubuntu@${MASTER_IP} \
@@ -33,29 +32,34 @@ jobs:
             > /tmp/kubeconfig.yaml
           echo "✅ kubeconfig geholt"
 
-      - name: kubectl port-forward Demo App
+          # Services + Pods anzeigen
+          KUBECONFIG=/tmp/kubeconfig.yaml kubectl --insecure-skip-tls-verify \
+            get svc,pods -n default -o wide 2>/dev/null || true
+
+      - name: port-forward demo-app Deployment
         run: |
           KUBECONFIG=/tmp/kubeconfig.yaml kubectl --insecure-skip-tls-verify \
-            port-forward svc/demo-lb 8080:80 -n default &
-          sleep 5
-          for i in $(seq 1 15); do
-            curl -sf --max-time 3 http://localhost:8080 > /dev/null 2>&1 \
-              && echo "✅ Demo App erreichbar" && break
-            echo "  [$i/15] warte..."
+            port-forward deployment/demo-app 8080:80 -n default &
+          sleep 8
+          for i in $(seq 1 20); do
+            HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" --max-time 3 http://localhost:8080 2>/dev/null || echo "0")
+            echo "  [$i/20] HTTP: $HTTP_CODE"
+            [ "$HTTP_CODE" = "200" ] && echo "✅ Demo App ready!" && break
             sleep 3
           done
 
       - name: Install Playwright
         run: |
-          cd /tmp
-          npm init -y > /dev/null 2>&1
+          cd /tmp && npm init -y > /dev/null 2>&1
           npm install playwright > /dev/null 2>&1
           npx playwright install chromium --with-deps > /dev/null 2>&1
           echo "✅ Playwright ready"
 
       - name: Screenshot
         run: |
-          SCREENSHOT_URL=http://localhost:8080 node $GITHUB_WORKSPACE/scripts/screenshot.cjs
+          SCREENSHOT_URL=http://localhost:8080 \
+          SCREENSHOT_OUT=/tmp/demo-app.png \
+          node $GITHUB_WORKSPACE/scripts/screenshot.cjs
 
       - name: Upload Screenshot
         uses: actions/upload-artifact@v4
