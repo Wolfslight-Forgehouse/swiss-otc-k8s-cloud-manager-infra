@@ -1,22 +1,34 @@
-const playwright = require('/tmp/node_modules/playwright');
+const pw = require('/tmp/node_modules/playwright');
+const path = require('path');
+const fs = require('fs');
+
+const htmlFile = process.env.HTML_FILE || '/tmp/demo-app.html';
+const outFile  = process.env.SCREENSHOT_OUT || '/tmp/demo-app.png';
 
 (async () => {
-  const url = process.env.SCREENSHOT_URL || 'http://localhost:8080';
-  const outPath = process.env.SCREENSHOT_OUT || '/tmp/demo-app.png';
-  console.log(`📸 Screenshot: ${url}`);
-  const browser = await playwright.chromium.launch({
-    args: ['--no-sandbox', '--disable-dev-shm-usage']
+  if (!fs.existsSync(htmlFile)) {
+    console.error(`❌ HTML file not found: ${htmlFile}`);
+    process.exit(1);
+  }
+  const fileSize = fs.statSync(htmlFile).size;
+  console.log(`📄 HTML: ${htmlFile} (${fileSize} bytes)`);
+
+  const url = process.env.SCREENSHOT_URL || ('file://' + path.resolve(htmlFile));
+  console.log(`📸 Rendering: ${url}`);
+
+  const browser = await pw.chromium.launch({
+    args: ['--no-sandbox', '--disable-dev-shm-usage', '--allow-file-access-from-files']
   });
   const page = await browser.newPage();
   await page.setViewportSize({ width: 1280, height: 900 });
   try {
-    await page.goto(url, { timeout: 45000, waitUntil: 'domcontentloaded' });
-    // Extra 3s für JS/CSS rendering
-    await page.waitForTimeout(3000);
+    await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 });
+    await page.waitForTimeout(2000);
   } catch (e) {
-    console.log(`goto error: ${e.message}`);
+    console.log(`goto info: ${e.message}`);
   }
-  await page.screenshot({ path: outPath, fullPage: true });
-  console.log(`✅ Screenshot gespeichert: ${outPath}`);
+  await page.screenshot({ path: outFile, fullPage: true });
+  const outSize = fs.statSync(outFile).size;
+  console.log(`✅ Screenshot: ${outFile} (${outSize} bytes)`);
   await browser.close();
 })();

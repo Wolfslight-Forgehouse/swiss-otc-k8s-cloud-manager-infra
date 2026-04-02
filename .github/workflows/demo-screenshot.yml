@@ -25,24 +25,17 @@ jobs:
           BASTION_IP: ${{ secrets.BASTION_IP }}
           MASTER_IP:  ${{ secrets.MASTER_IP }}
         run: |
-          # ELB IP aus Terraform Output (aus dem letzten Apply)
-          # Bastion ist im VPC und kann die ELB IP direkt erreichen
           ELB_IP=$(ssh -i ~/.ssh/rke2-key -o StrictHostKeyChecking=no \
             -J ubuntu@${BASTION_IP} ubuntu@${MASTER_IP} \
             "sudo kubectl --kubeconfig /etc/rancher/rke2/rke2.yaml get svc demo-lb -n default \
              -o jsonpath='{.status.loadBalancer.ingress[0].ip}'" 2>/dev/null || echo "")
           echo "ELB IP: $ELB_IP"
+          [ -z "$ELB_IP" ] && echo "❌ Kein ELB IP" && exit 1
 
-          if [ -z "$ELB_IP" ]; then
-            echo "❌ Kein ELB IP gefunden"
-            exit 1
-          fi
-
-          # HTML via Bastion abrufen (Bastion ist im VPC)
           ssh -i ~/.ssh/rke2-key -o StrictHostKeyChecking=no \
             ubuntu@${BASTION_IP} \
-            "curl -sf --max-time 10 http://${ELB_IP}" > /tmp/demo-app.html
-          echo "✅ HTML geholt ($(wc -c < /tmp/demo-app.html) bytes)"
+            "curl -sf --max-time 15 http://${ELB_IP}" > /tmp/demo-app.html
+          echo "✅ HTML: $(wc -c < /tmp/demo-app.html) bytes"
           echo "ELB_IP=$ELB_IP" >> $GITHUB_ENV
 
       - name: Install Playwright
@@ -52,27 +45,11 @@ jobs:
           npx playwright install chromium --with-deps > /dev/null 2>&1
           echo "✅ Playwright ready"
 
-      - name: Screenshot (lokale HTML-Datei)
+      - name: Screenshot
         run: |
-          node -e "
-const pw = require('/tmp/node_modules/playwright');
-const path = require('path');
-const fs = require('fs');
-(async () => {
-  // HTML lokal als file:// öffnen
-  const htmlPath = path.resolve('/tmp/demo-app.html');
-  const url = 'file://' + htmlPath;
-  console.log('📸 Rendering: ' + url);
-  const browser = await pw.chromium.launch({ args: ['--no-sandbox','--disable-dev-shm-usage'] });
-  const page = await browser.newPage();
-  await page.setViewportSize({ width: 1280, height: 900 });
-  await page.goto(url, { waitUntil: 'domcontentloaded' });
-  await page.waitForTimeout(2000);
-  await page.screenshot({ path: '/tmp/demo-app.png', fullPage: true });
-  console.log('✅ Screenshot: /tmp/demo-app.png');
-  await browser.close();
-})();
-"
+          HTML_FILE=/tmp/demo-app.html \
+          SCREENSHOT_OUT=/tmp/demo-app.png \
+          node $GITHUB_WORKSPACE/scripts/screenshot.cjs
 
       - name: Upload Screenshot
         uses: actions/upload-artifact@v4
