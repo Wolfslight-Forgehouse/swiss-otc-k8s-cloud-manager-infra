@@ -236,3 +236,46 @@ jobs:
           $K get pods -n kube-system | grep -E "ovn|kube-ovn"
           $K get nodes
           REMOTE
+
+  describe-ovn-central:
+    runs-on: ubuntu-latest
+    environment: production
+    needs: fix-ovn-bootstrap
+    if: always()
+    steps:
+      - name: Setup SSH
+        env:
+          SSH_PRIVATE_KEY_B64: ${{ secrets.SSH_PRIVATE_KEY_B64 }}
+          BASTION_IP:          ${{ secrets.BASTION_IP }}
+          MASTER_IP:           ${{ secrets.MASTER_IP }}
+        run: |
+          mkdir -p ~/.ssh
+          echo "$SSH_PRIVATE_KEY_B64" | base64 -d > ~/.ssh/rke2-key
+          chmod 600 ~/.ssh/rke2-key
+          for i in $(seq 1 6); do
+            ssh-keyscan -T 15 -H "$BASTION_IP" >> ~/.ssh/known_hosts 2>/dev/null && break; sleep 5; done
+          printf 'Host master\n  HostName %s\n  User ubuntu\n  IdentityFile ~/.ssh/rke2-key\n  StrictHostKeyChecking no\n  ProxyJump ubuntu@%s\n  ConnectTimeout 15\n\nHost %s\n  User ubuntu\n  IdentityFile ~/.ssh/rke2-key\n  StrictHostKeyChecking no\n  ConnectTimeout 15\n' \
+            "$MASTER_IP" "$BASTION_IP" "$BASTION_IP" > ~/.ssh/config
+          chmod 600 ~/.ssh/config
+
+      - name: Describe ovn-central + Node Labels
+        env:
+          BASTION_IP: ${{ secrets.BASTION_IP }}
+          MASTER_IP:  ${{ secrets.MASTER_IP }}
+        run: |
+          ssh -F ~/.ssh/config master << 'REMOTE'
+          K="sudo /var/lib/rancher/rke2/bin/kubectl --kubeconfig /etc/rancher/rke2/rke2.yaml --insecure-skip-tls-verify"
+
+          echo "=== Master Node Labels ==="
+          $K get node rke2-dev-master --show-labels
+
+          echo ""
+          echo "=== ovn-central describe ==="
+          OVN_POD=$($K get pod -n kube-system -l component=ovn-central -o name 2>/dev/null | head -1)
+          echo "Pod: $OVN_POD"
+          [ -n "$OVN_POD" ] && $K describe $OVN_POD -n kube-system 2>/dev/null | tail -30
+
+          echo ""
+          echo "=== Helm Values ovn-central ==="
+          $K get pod -n kube-system -l component=ovn-central -o yaml 2>/dev/null | grep -A5 "nodeSelector\|tolerations\|affinity" | head -20
+          REMOTE
