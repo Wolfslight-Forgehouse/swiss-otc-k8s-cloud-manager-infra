@@ -14,14 +14,55 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install Playwright + Screenshot
+      - name: Setup SSH Tunnel (Runner → Bastion → ELB)
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+          BASTION_IP:      ${{ secrets.BASTION_IP }}
+        run: |
+          mkdir -p ~/.ssh
+          echo "$SSH_PRIVATE_KEY" > ~/.ssh/rke2-key
+          chmod 600 ~/.ssh/rke2-key
+          ssh-keyscan -H "$BASTION_IP" >> ~/.ssh/known_hosts 2>/dev/null || true
+
+          # Tunnel: localhost:8080 → ELB:80 via Bastion
+          ELB_IP="${{ inputs.elb_ip }}"
+          ssh -i ~/.ssh/rke2-key \
+            -o StrictHostKeyChecking=no \
+            -o ExitOnForwardFailure=yes \
+            -fNL 8080:${ELB_IP}:80 \
+            ubuntu@${BASTION_IP}
+
+          # Warten bis Tunnel steht
+          for i in $(seq 1 10); do
+            curl -sf --max-time 3 http://localhost:8080 > /dev/null 2>&1 && echo "✅ Tunnel ready" && break
+            echo "  [$i/10] warte auf Tunnel..."
+            sleep 3
+          done
+
+      - name: Install Playwright + Screenshot via Tunnel
         run: |
           cd /tmp
           npm init -y > /dev/null 2>&1
           npm install playwright > /dev/null 2>&1
           npx playwright install chromium --with-deps > /dev/null 2>&1
-          cp $GITHUB_WORKSPACE/scripts/screenshot.mjs .
-          ELB_IP="${{ inputs.elb_ip }}" node --input-type=module < screenshot.mjs
+
+          # Screenshot via Tunnel auf localhost:8080
+          cat > screenshot.mjs << 'JS'
+          import { chromium } from './node_modules/playwright/index.js';
+          const browser = await chromium.launch({ args: ['--no-sandbox', '--disable-dev-shm-usage'] });
+          const page = await browser.newPage();
+          await page.setViewportSize({ width: 1280, height: 900 });
+          console.log('📸 Screenshot via SSH Tunnel: http://localhost:8080');
+          try {
+            await page.goto('http://localhost:8080', { timeout: 30000, waitUntil: 'networkidle' });
+          } catch {
+            await page.goto('http://localhost:8080', { timeout: 15000 });
+          }
+          await page.screenshot({ path: '/tmp/demo-app.png', fullPage: true });
+          console.log('✅ Screenshot gespeichert');
+          await browser.close();
+          JS
+          node screenshot.mjs
 
       - name: Upload Screenshot
         uses: actions/upload-artifact@v4
