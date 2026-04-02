@@ -114,3 +114,51 @@ jobs:
           echo ""
           echo "Empfehlung: Overlay reicht für Production."
           echo "Underlay nur wenn: direkte VPC-IP für Pods oder max. Performance nötig."
+  debug-ovn:
+    runs-on: ubuntu-latest
+    environment: production
+    needs: validate
+    if: always()
+    steps:
+      - name: Setup SSH
+        env:
+          SSH_PRIVATE_KEY_B64: ${{ secrets.SSH_PRIVATE_KEY_B64 }}
+          BASTION_IP:          ${{ secrets.BASTION_IP }}
+          MASTER_IP:           ${{ secrets.MASTER_IP }}
+        run: |
+          mkdir -p ~/.ssh
+          echo "$SSH_PRIVATE_KEY_B64" | base64 -d > ~/.ssh/rke2-key
+          chmod 600 ~/.ssh/rke2-key
+          for i in $(seq 1 6); do
+            ssh-keyscan -T 15 -H "$BASTION_IP" >> ~/.ssh/known_hosts 2>/dev/null && break
+            sleep 5
+          done
+          printf 'Host master\n  HostName %s\n  User ubuntu\n  IdentityFile ~/.ssh/rke2-key\n  StrictHostKeyChecking no\n  ProxyJump ubuntu@%s\n  ConnectTimeout 15\n\nHost %s\n  User ubuntu\n  IdentityFile ~/.ssh/rke2-key\n  StrictHostKeyChecking no\n  ConnectTimeout 15\n' \
+            "$MASTER_IP" "$BASTION_IP" "$BASTION_IP" > ~/.ssh/config
+          chmod 600 ~/.ssh/config
+
+      - name: OVN Debug Logs
+        env:
+          BASTION_IP: ${{ secrets.BASTION_IP }}
+          MASTER_IP:  ${{ secrets.MASTER_IP }}
+        run: |
+          ssh -F ~/.ssh/config master << 'REMOTE'
+          K="sudo /var/lib/rancher/rke2/bin/kubectl --kubeconfig /etc/rancher/rke2/rke2.yaml --insecure-skip-tls-verify"
+          echo "=== ovn-central Logs ==="
+          OVN_POD=$($K get pod -n kube-system -l component=ovn-central -o jsonpath='{.items[0].metadata.name}' 2>/dev/null)
+          [ -n "$OVN_POD" ] && $K logs -n kube-system "$OVN_POD" --tail=30 2>/dev/null || echo "ovn-central nicht gefunden / Pending"
+
+          echo ""
+          echo "=== kube-ovn-controller Logs ==="
+          CTRL_POD=$($K get pod -n kube-system -l app=kube-ovn-controller -o jsonpath='{.items[0].metadata.name}' 2>/dev/null)
+          [ -n "$CTRL_POD" ] && $K logs -n kube-system "$CTRL_POD" --tail=20 2>/dev/null || echo "nicht gefunden"
+
+          echo ""
+          echo "=== kube-ovn-cni Logs (erster Node) ==="
+          CNI_POD=$($K get pod -n kube-system -l app=kube-ovn-cni -o jsonpath='{.items[0].metadata.name}' 2>/dev/null)
+          [ -n "$CNI_POD" ] && $K logs -n kube-system "$CNI_POD" --tail=20 2>/dev/null || echo "nicht gefunden"
+
+          echo ""
+          echo "=== Events kube-system ==="
+          $K get events -n kube-system --sort-by='.lastTimestamp' 2>/dev/null | tail -15
+          REMOTE
