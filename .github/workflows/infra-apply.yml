@@ -320,6 +320,15 @@ jobs:
           helm repo update
 
           # Kube-OVN Overlay Mode — keine OTC VPC Abhängigkeiten
+          # Bootstrap Fix: kube-ovn/role=master Label auf Master setzen
+          # ovn-central wird nur auf Nodes mit diesem Label scheduled
+          MASTER_HOSTNAME=$(kubectl --insecure-skip-tls-verify get nodes \
+            -o jsonpath='{.items[?(@.metadata.labels.node-role\.kubernetes\.io/control-plane)].metadata.name}' \
+            2>/dev/null | awk '{print $1}')
+          echo "Master Node: $MASTER_HOSTNAME"
+          kubectl --insecure-skip-tls-verify label node "$MASTER_HOSTNAME" \
+            kube-ovn/role=master --overwrite || true
+
           helm upgrade --install kube-ovn kubeovn/kube-ovn \
             --namespace kube-system \
             --version 1.13.0 \

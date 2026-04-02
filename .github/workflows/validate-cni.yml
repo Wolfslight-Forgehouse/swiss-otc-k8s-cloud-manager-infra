@@ -162,3 +162,77 @@ jobs:
           echo "=== Events kube-system ==="
           $K get events -n kube-system --sort-by='.lastTimestamp' 2>/dev/null | tail -15
           REMOTE
+
+  fix-ovn-bootstrap:
+    runs-on: ubuntu-latest
+    environment: production
+    needs: debug-ovn
+    if: always()
+    steps:
+      - name: Setup SSH + kubectl
+        env:
+          SSH_PRIVATE_KEY_B64: ${{ secrets.SSH_PRIVATE_KEY_B64 }}
+          BASTION_IP:          ${{ secrets.BASTION_IP }}
+          MASTER_IP:           ${{ secrets.MASTER_IP }}
+        run: |
+          mkdir -p ~/.ssh
+          echo "$SSH_PRIVATE_KEY_B64" | base64 -d > ~/.ssh/rke2-key
+          chmod 600 ~/.ssh/rke2-key
+          for i in $(seq 1 6); do
+            ssh-keyscan -T 15 -H "$BASTION_IP" >> ~/.ssh/known_hosts 2>/dev/null && break
+            sleep 5
+          done
+          printf 'Host master\n  HostName %s\n  User ubuntu\n  IdentityFile ~/.ssh/rke2-key\n  StrictHostKeyChecking no\n  ProxyJump ubuntu@%s\n  ConnectTimeout 15\n\nHost %s\n  User ubuntu\n  IdentityFile ~/.ssh/rke2-key\n  StrictHostKeyChecking no\n  ConnectTimeout 15\n' \
+            "$MASTER_IP" "$BASTION_IP" "$BASTION_IP" > ~/.ssh/config
+          chmod 600 ~/.ssh/config
+
+      - name: Fix OVN Bootstrap (kube-ovn/role=master Label + Helm Upgrade)
+        env:
+          BASTION_IP: ${{ secrets.BASTION_IP }}
+          MASTER_IP:  ${{ secrets.MASTER_IP }}
+        run: |
+          ssh -F ~/.ssh/config master << 'REMOTE'
+          K="sudo /var/lib/rancher/rke2/bin/kubectl --kubeconfig /etc/rancher/rke2/rke2.yaml --insecure-skip-tls-verify"
+          H="sudo /var/lib/rancher/rke2/bin/helm --kubeconfig /etc/rancher/rke2/rke2.yaml"
+
+          echo "=== Step 1: Master Node labeln ==="
+          MASTER_NODE=$($K get nodes -o jsonpath='{.items[?(@.metadata.labels.node-role\.kubernetes\.io/control-plane)].metadata.name}' 2>/dev/null | awk '{print $1}')
+          echo "Master: $MASTER_NODE"
+          $K label node "$MASTER_NODE" kube-ovn/role=master --overwrite
+          echo "✅ Label gesetzt"
+
+          echo ""
+          echo "=== Step 2: Helm Upgrade Kube-OVN ==="
+          MASTER_IP_LOCAL=$(hostname -I | awk '{print $1}')
+          echo "Master IP: $MASTER_IP_LOCAL"
+
+          $H repo add kubeovn https://kubeovn.github.io/kube-ovn 2>/dev/null || true
+          $H repo update kubeovn 2>/dev/null || true
+
+          $H upgrade kube-ovn kubeovn/kube-ovn             --namespace kube-system             --version 1.13.0             --reuse-values             --set MASTER_NODES="$MASTER_IP_LOCAL"             --insecure-skip-tls-verify
+          echo "✅ Helm Upgrade done"
+
+          echo ""
+          echo "=== Step 3: OVN Central Pod beobachten ==="
+          for i in $(seq 1 20); do
+            STATUS=$($K get pods -n kube-system | grep ovn-central | awk '{print $3}' | head -1)
+            echo "  [$i/20] ovn-central: ${STATUS:-not found}"
+            [ "$STATUS" = "Running" ] && break
+            sleep 10
+          done
+
+          echo ""
+          echo "=== Step 4: CNI Pods ==="
+          for i in $(seq 1 20); do
+            RUNNING=$($K get pods -n kube-system | grep "kube-ovn-cni" | grep -c "Running" || echo 0)
+            TOTAL=$($K get pods -n kube-system | grep -c "kube-ovn-cni" || echo 0)
+            echo "  [$i/20] kube-ovn-cni: $RUNNING/$TOTAL Running"
+            [ "$RUNNING" -ge 1 ] && break
+            sleep 10
+          done
+
+          echo ""
+          echo "=== Final Status ==="
+          $K get pods -n kube-system | grep -E "ovn|kube-ovn"
+          $K get nodes
+          REMOTE
