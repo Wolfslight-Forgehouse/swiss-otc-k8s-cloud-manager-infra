@@ -44,17 +44,27 @@ jobs:
             2>/dev/null || echo "")
           echo "Demo Pod: $DEMO_POD"
 
-          if [ -n "$DEMO_POD" ]; then
-            # curl direkt im nginx Container
-            ssh -i ~/.ssh/rke2-key -o StrictHostKeyChecking=no \
-              -J ubuntu@${BASTION_IP} ubuntu@${MASTER_IP} \
-              "sudo kubectl --kubeconfig /etc/rancher/rke2/rke2.yaml \
-               --insecure-skip-tls-verify exec -n default ${DEMO_POD} -c nginx \
-               -- curl -sf http://localhost:80 2>/dev/null" \
-              2>/dev/null > /tmp/demo-app.html
-          else
-            echo "⚠️ Pod nicht gefunden, verwende statisches HTML"
-            echo "<html><body style='background:#000;color:#00ff00;font-family:monospace'><h1>🌐 Swiss OTC RKE2 Demo App</h1><p>Kube-OVN CNI ✅ ELB v3 ✅ EVS PVC ✅ CSI-S3 ✅</p><p>ELB IP: ${ELB_IP}</p></body></html>" > /tmp/demo-app.html
+          # HTML aus ConfigMap lesen (kein curl nötig)
+          ssh -i ~/.ssh/rke2-key -o StrictHostKeyChecking=no \
+            -J ubuntu@${BASTION_IP} ubuntu@${MASTER_IP} \
+            "sudo kubectl --kubeconfig /etc/rancher/rke2/rke2.yaml \
+             --insecure-skip-tls-verify get configmap demo-html -n default \
+             -o jsonpath='{.data.index\.html}' 2>/dev/null" \
+            2>/dev/null > /tmp/demo-app.html
+
+          SIZE=$(wc -c < /tmp/demo-app.html)
+          if [ "$SIZE" -lt 100 ]; then
+            echo "⚠️ ConfigMap leer/nicht gefunden, fallback auf nginx cat"
+            # Fallback: Datei direkt im Container lesen
+            if [ -n "$DEMO_POD" ]; then
+              ssh -i ~/.ssh/rke2-key -o StrictHostKeyChecking=no \
+                -J ubuntu@${BASTION_IP} ubuntu@${MASTER_IP} \
+                "sudo kubectl --kubeconfig /etc/rancher/rke2/rke2.yaml \
+                 --insecure-skip-tls-verify exec -n default ${DEMO_POD} -c nginx \
+                 -- cat /usr/share/nginx/html/index.html 2>/dev/null" \
+                2>/dev/null > /tmp/demo-app.html
+            fi
+            SIZE=$(wc -c < /tmp/demo-app.html)
           fi
 
           SIZE=$(wc -c < /tmp/demo-app.html)
