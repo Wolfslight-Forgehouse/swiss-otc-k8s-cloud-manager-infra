@@ -14,6 +14,13 @@ Environment="HTTP_PROXY=http://${proxy_host}:3128"
 Environment="HTTPS_PROXY=http://${proxy_host}:3128"
 Environment="NO_PROXY=10.0.0.0/8,127.0.0.1,localhost,.svc,.cluster.local"
 PROXY
+
+# Proxy für profile (crictl, containerd-shim etc.)
+cat > /etc/profile.d/proxy.sh <<PROFXY
+export HTTP_PROXY=http://${proxy_host}:3128
+export HTTPS_PROXY=http://${proxy_host}:3128
+export NO_PROXY=10.0.0.0/8,127.0.0.1,localhost,.svc,.cluster.local
+PROFXY
 %{ endif }
 
 # Wait for internet / proxy
@@ -49,6 +56,23 @@ mirrors:
       - "https://registry-1.docker.io"
 REGEOF
 chmod 600 /etc/rancher/rke2/registries.yaml
+
+%{ if proxy_host != "" }
+# RKE2 agent containerd proxy config
+mkdir -p /etc/rancher/rke2
+cat > /etc/rancher/rke2/proxy.env <<PROXYENV
+HTTP_PROXY=http://${proxy_host}:3128
+HTTPS_PROXY=http://${proxy_host}:3128
+NO_PROXY=10.0.0.0/8,127.0.0.1,localhost,.svc,.cluster.local,169.254.0.0/16
+PROXYENV
+
+mkdir -p /etc/systemd/system/rke2-agent.service.d
+cat >> /etc/systemd/system/rke2-agent.service.d/proxy.conf <<PROXYOVERRIDE
+
+EnvironmentFile=-/etc/rancher/rke2/proxy.env
+PROXYOVERRIDE
+systemctl daemon-reload
+%{ endif }
 
 systemctl enable rke2-agent.service
 systemctl start rke2-agent.service

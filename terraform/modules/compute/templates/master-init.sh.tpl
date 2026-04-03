@@ -8,7 +8,7 @@ export HTTP_PROXY=http://${proxy_host}:3128
 export HTTPS_PROXY=http://${proxy_host}:3128
 export NO_PROXY=10.0.0.0/8,127.0.0.1,localhost,.svc,.cluster.local
 
-# Persist proxy for RKE2 service
+# Persist proxy for RKE2 service AND containerd (RKE2 embedded)
 mkdir -p /etc/systemd/system/rke2-server.service.d
 cat > /etc/systemd/system/rke2-server.service.d/proxy.conf <<PROXY
 [Service]
@@ -16,6 +16,25 @@ Environment="HTTP_PROXY=http://${proxy_host}:3128"
 Environment="HTTPS_PROXY=http://${proxy_host}:3128"
 Environment="NO_PROXY=10.0.0.0/8,127.0.0.1,localhost,.svc,.cluster.local"
 PROXY
+
+# RKE2 embedded containerd braucht eigene proxy.conf (erbt nicht vom Parent-Service)
+mkdir -p /etc/systemd/system/rke2-server.service.d
+# containerd in RKE2 wird durch rke2-server gemanagt — wir setzen env auch in containerd config
+mkdir -p /var/lib/rancher/rke2/agent/etc/containerd/
+cat > /var/lib/rancher/rke2/agent/etc/containerd/config.toml.tmpl <<CTRD
+version = 2
+
+[plugins."io.containerd.grpc.v1.cri".registry]
+  [plugins."io.containerd.grpc.v1.cri".registry.configs]
+CTRD
+
+# Proxy via environment in containerd host-process
+mkdir -p /etc/systemd/system/containerd.service.d/ 2>/dev/null || true
+cat > /etc/profile.d/proxy.sh <<PROFXY
+export HTTP_PROXY=http://${proxy_host}:3128
+export HTTPS_PROXY=http://${proxy_host}:3128
+export NO_PROXY=10.0.0.0/8,127.0.0.1,localhost,.svc,.cluster.local
+PROFXY
 %{ endif }
 
 # Wait for internet access (via proxy or NAT)
@@ -92,6 +111,25 @@ mirrors:
       - "https://registry-1.docker.io"
 REGEOF
 chmod 600 /etc/rancher/rke2/registries.yaml
+
+%{ if proxy_host != "" }
+# RKE2 embedded containerd proxy config (über systemd env-file)
+# containerd erbt HTTP_PROXY nicht von rke2-server — eigenes override nötig
+mkdir -p /etc/rancher/rke2
+cat > /etc/rancher/rke2/proxy.env <<PROXYENV
+HTTP_PROXY=http://${proxy_host}:3128
+HTTPS_PROXY=http://${proxy_host}:3128
+NO_PROXY=10.0.0.0/8,127.0.0.1,localhost,.svc,.cluster.local,169.254.0.0/16
+PROXYENV
+
+# RKE2 server service: EnvironmentFile setzen
+mkdir -p /etc/systemd/system/rke2-server.service.d
+cat >> /etc/systemd/system/rke2-server.service.d/proxy.conf <<PROXYOVERRIDE
+
+EnvironmentFile=-/etc/rancher/rke2/proxy.env
+PROXYOVERRIDE
+systemctl daemon-reload
+%{ endif }
 
 systemctl enable rke2-server.service
 systemctl start rke2-server.service
