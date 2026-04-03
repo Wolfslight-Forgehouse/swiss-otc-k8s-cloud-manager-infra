@@ -93,27 +93,27 @@ jobs:
               echo CHMOD_DONE'"
           echo "✅ Datei-Permissions gesetzt"
 
-      - name: Fix 2 — Kyverno 3.3.4 (CIS 5.2.*)
+      - name: Fix 2 — Kyverno Policies (CIS 5.2.*)
         run: |
-          echo "🛡️  Deploy Kyverno 3.3.4..."
-          helm repo add kyverno https://kyverno.github.io/kyverno 2>/dev/null || true
-          helm repo update kyverno 2>/dev/null || true
-          # Kyverno idempotent: falls bereits installiert → skip upgrade (läuft schon)
-          KYVERNO_STATUS=$(helm status kyverno -n kyverno --kubeconfig /tmp/kubeconfig 2>/dev/null | grep STATUS || echo "not-installed")
-          if echo "$KYVERNO_STATUS" | grep -q "deployed"; then
-            echo "ℹ️  Kyverno bereits deployed — skip upgrade"
-          else
-            helm upgrade --install kyverno kyverno/kyverno \
+          echo "🛡️  Kyverno Policies (CIS 5.2.*)..."
+          # Kyverno installieren falls noch nicht vorhanden
+          if ! kubectl --insecure-skip-tls-verify get ns kyverno &>/dev/null; then
+            echo "ℹ️  Kyverno nicht gefunden — installiere..."
+            helm repo add kyverno https://kyverno.github.io/kyverno 2>/dev/null || true
+            helm repo update kyverno 2>/dev/null || true
+            helm install kyverno kyverno/kyverno \
               --namespace kyverno --create-namespace \
               --version 3.3.4 \
               --set admissionController.replicas=1 \
               --kubeconfig /tmp/kubeconfig \
               --insecure-skip-tls-verify \
               --wait --timeout 5m
+          else
+            echo "ℹ️  Kyverno Namespace vorhanden — nur Policies applyen"
           fi
           kubectl --insecure-skip-tls-verify apply \
             -f deploy/k8s/security/kyverno/cis-policies.yaml
-          echo "✅ Kyverno deployed"
+          echo "✅ Kyverno Policies aktiv"
           kubectl --insecure-skip-tls-verify get clusterpolicies
 
       - name: Fix 3 — NetworkPolicies Default-Deny (CIS 5.3.2)
