@@ -140,3 +140,30 @@ kubectl describe pod ovn-central-xxx -n kube-system | grep -A10 Events
 # Node Labels prüfen
 kubectl get nodes --show-labels | grep kube-ovn
 ```
+
+---
+
+## RKE2-spezifische Helm-Werte (KRITISCH!)
+
+Der wichtigste Fix für produktiven Betrieb:
+
+```bash
+helm upgrade --install kube-ovn kubeovn/kube-ovn \
+  --namespace kube-system \
+  --set "kubelet_conf.KUBELET_DIR=/var/lib/rancher/rke2/agent/kubelet" \
+  --set "cni_conf.CNI_CONF_DIR=/var/lib/rancher/rke2/agent/etc/cni/net.d" \
+  --set "cni_conf.CNI_BIN_DIR=/opt/cni/bin"
+```
+
+**Ohne diese Parameter:** `kube-ovn-cni` bleibt dauerhaft `0/N Running` (Readiness-Probe sucht `/var/lib/kubelet` — existiert in RKE2 nicht).
+
+**Mit diesen Parametern:** CNI in ~2 Min ready, alle nachfolgenden Pods bekommen Netzwerk.
+
+## Verifizierter E2E-Status (2026-04-03)
+
+```
+EVS PVC (Block Storage):   Bound ✅
+OBS PVC (Object Storage):  Bound ✅
+ELB LoadBalancer:          Automatisch via CCM ✅
+HTTP 200:                  Demo App live ✅
+```

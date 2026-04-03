@@ -176,3 +176,45 @@ Reihenfolge im Deploy-Step:
 2. `helm install kube-ovn ...`
 3. `kubectl patch deployment ovn-central` (CPU 100m)
 4. Warten auf Pods
+
+---
+
+## 2026-04-03 — Kube-OVN CNI Ready Fix + Vollständiger E2E-Test ✅
+
+### Problem
+`kube-ovn-cni` DaemonSet blieb dauerhaft `0/3 Ready` (Running aber Readiness-Probe failed) über alle Runs.
+Folge: Neue Pods (Cinder CSI Controller) bekamen kein Netzwerk-Interface → `ContainerCreating` hängt ewig → PVCs Pending.
+
+### Root Cause
+Kube-OVN Helm Chart Default-Werte für Kubelet-Verzeichnis (`/var/lib/kubelet`) falsch für RKE2.
+RKE2 nutzt: `/var/lib/rancher/rke2/agent/kubelet`
+
+Die Readiness-Probe des `kube-ovn-cni` DaemonSets prüft diesen Pfad — findet ihn nicht → never Ready.
+
+### Fix
+```yaml
+helm upgrade --install kube-ovn kubeovn/kube-ovn \
+  --set "kubelet_conf.KUBELET_DIR=/var/lib/rancher/rke2/agent/kubelet" \
+  --set "cni_conf.CNI_CONF_DIR=/var/lib/rancher/rke2/agent/etc/cni/net.d" \
+  --set "cni_conf.CNI_BIN_DIR=/opt/cni/bin"
+```
+
+### Ergebnis (Run 23939353528)
+```
+kube-ovn-cni:     3/3 Ready ✅
+Cinder CSI:       Running ✅  (Controller in <1 Min ready)
+EVS PVC:          Bound ✅    (10Gi Block Storage, csi-cinder-sc-delete)
+OBS PVC:          Bound ✅    (10Gi Object Storage, csi-obs)
+ELB External-IP:  185.153.106.206 ✅
+HTTP 200:         ✅ (attempt 2/12)
+Demo App:         Live unter http://185.153.106.206
+```
+
+### Timeline der Debugging-Iterationen
+1. `infra-apply.yml` PVC Wait-Loop zu kurz → 12→20 Polls
+2. Cinder CSI Controller-Pod Wait → `grep` Label-Bug
+3. Registry Mirror → `registry.k8s.io` nicht das Problem
+4. TinyProxy EnvironmentFile → containerd erbt trotzdem nicht
+5. Pre-pull via `crictl` → `crictl` nicht im PATH
+6. kube-ovn-cni `0/3 Ready` Wait-Loop → CNI nie ready
+7. **Fix: `kubelet_conf.KUBELET_DIR` RKE2-Pfad** → sofort grün ✅

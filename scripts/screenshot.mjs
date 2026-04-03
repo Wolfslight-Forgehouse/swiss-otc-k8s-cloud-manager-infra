@@ -8,9 +8,13 @@ const browser = await chromium.launch({ args: ['--no-sandbox', '--disable-dev-sh
 const page = await browser.newPage();
 await page.setViewportSize({ width: 1280, height: 900 });
 try {
-  await page.goto(url, { timeout: 30000, waitUntil: 'networkidle' });
+  await page.goto(url, { timeout: 30000, waitUntil: 'domcontentloaded' });
+  await page.waitForTimeout(2000);  // Warte auf CSS/JS rendering
 } catch {
-  try { await page.goto(url, { timeout: 15000 }); } catch { console.log('Timeout, taking screenshot anyway'); }
+  try { 
+    await page.goto(url, { timeout: 15000, waitUntil: 'load' }); 
+    await page.waitForTimeout(1000);
+  } catch { console.log('Timeout, taking screenshot anyway'); }
 }
 await page.screenshot({ path: '/tmp/demo-app.png', fullPage: true });
 console.log('✅ Screenshot gespeichert');

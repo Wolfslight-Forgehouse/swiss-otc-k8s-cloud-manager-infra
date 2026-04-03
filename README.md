@@ -18,6 +18,20 @@ graph TD
     L --> M[EVS Block Volume]
 ```
 
+
+## Status (2026-04-03)
+
+| Komponente | Status |
+|---|---|
+| RKE2 Cluster (1 Master + 2 Worker) | ✅ |
+| Kube-OVN CNI | ✅ |
+| OTC Cloud Manager (ELB Automation) | ✅ |
+| EVS Block Storage (Cinder CSI) | ✅ |
+| OBS Object Storage (CSI-S3 + GeeseFS) | ✅ |
+| Demo App + ELB | ✅ HTTP 200 |
+
+![Demo App](docs/demo-app-screenshot.png)
+
 ## 🚀 Team Onboarding
 
 Neu im Projekt? Start hier: **[docs/TEAM-ONBOARDING.md](docs/TEAM-ONBOARDING.md)**
