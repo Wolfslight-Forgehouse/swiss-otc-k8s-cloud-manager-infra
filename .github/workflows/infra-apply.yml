@@ -382,6 +382,37 @@ jobs:
           kubectl --insecure-skip-tls-verify get pods -n kube-system | grep -E "kube-ovn|ovn"
 
       # ── Deploy Cinder CSI (EVS Storage) ─────────────────
+
+      - name: Pre-pull CSI images on nodes
+        run: |
+          echo "🔄 Pre-pulling CSI images auf allen Nodes..."
+          
+          # Images aus dem Cinder CSI Controller (die nicht vom nodeplugin gecached werden)
+          IMAGES=(
+            "registry.k8s.io/sig-storage/csi-attacher:v4.10.0"
+            "registry.k8s.io/sig-storage/csi-provisioner:v5.3.0"
+            "registry.k8s.io/sig-storage/csi-snapshotter:v8.4.0"
+            "registry.k8s.io/sig-storage/csi-resizer:v1.14.0"
+          )
+          
+          # CSI-S3 Image
+          CSI_S3_IMAGE=$(kubectl --insecure-skip-tls-verify get ds csi-s3 -n kube-system -o jsonpath='{.spec.template.spec.containers[0].image}' 2>/dev/null || echo "")
+          
+          WORKERS_JSON='${{ env.WORKER_IPS_JSON }}'
+          WORKERS=$(echo $WORKERS_JSON | python3 -c "import sys,json; [print(x) for x in json.load(sys.stdin)]")
+          ALL_NODES="$MASTER_IP $WORKERS"
+          
+          for IMAGE in "${IMAGES[@]}"; do
+            echo "  Pulling: $IMAGE"
+            for NODE in $ALL_NODES; do
+              ssh -i /tmp/rke2-key                 -o StrictHostKeyChecking=no                 -o ProxyJump=ubuntu@${BASTION_IP}                 ubuntu@${NODE}                 "sudo crictl pull '$IMAGE'" &
+            done
+            wait
+            echo "  ✅ $IMAGE pulled"
+          done
+          
+          echo "✅ Pre-pull complete"
+
       - name: Deploy Cinder CSI (EVS PVC Support)
         env:
           OTC_USERNAME:   ${{ secrets.OTC_USERNAME }}
@@ -427,8 +458,8 @@ jobs:
           for i in $(seq 1 30); do
             # Controller hat 6 Container — warte bis alle ready (6/6)
             CTRL_STATUS=$(kubectl --insecure-skip-tls-verify get pods -n kube-system \
-              -l app=openstack-cinder-csi-controllerplugin --no-headers 2>/dev/null | \
-              head -1 | awk '{print $2}')
+              --no-headers 2>/dev/null | \
+              grep "cinder-csi-controllerplugin" | head -1 | awk '{print $2}')
             CTRL_READY=$(echo "$CTRL_STATUS" | grep -c "^[1-9][0-9]*/[1-9]" || echo "0")
             echo "  [$i/30] Controller status: ${CTRL_STATUS:-not found}" 
             echo "  [$i/20] Controller pods ready: ${CTRL_READY}"
