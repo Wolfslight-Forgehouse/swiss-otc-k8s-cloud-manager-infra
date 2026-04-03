@@ -119,3 +119,15 @@ variable "cni_plugin" {
   description = "CNI plugin: 'cilium' (default) or 'kube-ovn'"
   default     = "cilium"
 }
+
+variable "dns_zone" {
+  description = "OTC Private DNS Zone"
+  type        = string
+  default     = "sotc.internal"
+}
+
+variable "traefik_elb_ip" {
+  description = "Traefik ELB IP (nach erstem Apply befüllen)"
+  type        = string
+  default     = ""
+}

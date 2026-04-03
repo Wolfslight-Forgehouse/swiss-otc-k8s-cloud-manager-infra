@@ -682,7 +682,7 @@ jobs:
             --set grafana.adminPassword=admin \
             --set grafana.ingress.enabled=true \
             --set grafana.ingress.ingressClassName=traefik \
-            --set grafana.ingress.hosts='{grafana.local}' \
+            --set grafana.ingress.hosts='{grafana.sotc.internal}' \
             --set prometheus.prometheusSpec.retention=7d \
             --insecure-skip-tls-verify \
             --wait --timeout 10m
