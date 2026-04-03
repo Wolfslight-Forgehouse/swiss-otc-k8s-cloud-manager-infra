@@ -172,7 +172,7 @@ Requires=rke2-server.service
 [Service]
 Type=oneshot
 RemainAfterExit=yes
-ExecStart=/bin/bash -c 'sleep 30 &&   chmod 600 /etc/rancher/rke2/rke2.yaml 2>/dev/null || true &&   find /var/lib/rancher/rke2/server/manifests/ -name "*.yaml" -exec chmod 600 {} \; 2>/dev/null || true &&   find /etc/rancher/rke2/ -name "*.yaml" -exec chmod 600 {} \; 2>/dev/null || true &&   find /etc/rancher/rke2/ -name "*.conf" -exec chmod 600 {} \; 2>/dev/null || true'
+ExecStart=/bin/bash -c 'sleep 30 &&   chmod 600 /etc/rancher/rke2/rke2.yaml 2>/dev/null || true &&   find /var/lib/rancher/rke2/server/manifests/ -name "*.yaml" -exec chmod 600 {} \; 2>/dev/null || true &&   find /etc/rancher/rke2/ -name "*.yaml" -exec chmod 600 {} \; 2>/dev/null || true &&   find /etc/rancher/rke2/ -name "*.conf" -exec chmod 600 {} \; 2>/dev/null || true &&   find /var/lib/rancher/rke2/agent/pod-manifests/ -name "*.yaml" -exec chmod 600 {} \; 2>/dev/null || true &&   find /var/lib/rancher/rke2/server/tls/ \( -name "*.crt" -o -name "*.key" \) -exec chmod 600 {} \; 2>/dev/null || true &&   find /var/lib/rancher/rke2/agent/etc/cni/ -type f -exec chmod 600 {} \; 2>/dev/null || true'
 
 [Install]
 WantedBy=multi-user.target
