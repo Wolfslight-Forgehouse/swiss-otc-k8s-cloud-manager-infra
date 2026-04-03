@@ -131,3 +131,9 @@ variable "traefik_elb_ip" {
   type        = string
   default     = ""
 }
+
+variable "enable_private_dns" {
+  description = "OTC Private DNS aktivieren (benötigt IAM-Rolle dns_adm oder te_admin)"
+  type        = bool
+  default     = false
+}

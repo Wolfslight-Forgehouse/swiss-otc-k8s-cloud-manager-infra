@@ -160,12 +160,15 @@ output "deploy_ingress_nginx" {
 
 
 # ── OTC Private DNS (SDE-283) ──────────────────────────────────────────────
+# HINWEIS: Benötigt IAM-Rolle dns_adm oder te_admin auf OTC!
+# Aktivieren: TF_VAR_enable_private_dns=true in GitHub Secrets setzen
 module "dns" {
+  count  = var.enable_private_dns ? 1 : 0
   source = "../../modules/dns"
 
-  dns_zone       = var.dns_zone
-  vpc_id         = module.networking.vpc_id
-  traefik_elb_ip = var.traefik_elb_ip  # Nach erstem Apply manuell/via output befüllen
+  dns_zone          = var.dns_zone
+  vpc_id            = module.networking.vpc_id
+  traefik_elb_ip    = var.traefik_elb_ip
   dns_contact_email = "ops@sotc.internal"
 
   depends_on = [module.networking]

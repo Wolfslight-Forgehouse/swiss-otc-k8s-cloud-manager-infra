@@ -7,10 +7,10 @@ output "worker_ips_json" {
 
 output "dns_zone" {
   description = "OTC Private DNS Zone"
-  value       = module.dns.dns_zone_name
+  value       = length(module.dns) > 0 ? module.dns[0].dns_zone_name : "disabled"
 }
 
 output "dns_zone_id" {
   description = "OTC Private DNS Zone ID"
-  value       = module.dns.dns_zone_id
+  value       = length(module.dns) > 0 ? module.dns[0].dns_zone_id : ""
 }
