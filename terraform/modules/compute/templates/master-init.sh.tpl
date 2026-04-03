@@ -135,6 +135,31 @@ systemctl enable rke2-server.service
 systemctl start rke2-server.service
 
 
+
+# CIS RKE2 API-Server Hardening (SDE-286): 1.2.1, 1.2.9, 1.2.11
+cat >> /etc/rancher/rke2/config.yaml << 'RKECONFIG'
+kube-apiserver-arg:
+  - "anonymous-auth=false"
+  - "admission-control-config-file=/etc/rancher/rke2/admission-control-config.yaml"
+  - "enable-admission-plugins=NodeRestriction,EventRateLimit"
+RKECONFIG
+
+# EventRateLimit Konfiguration
+cat > /etc/rancher/rke2/admission-control-config.yaml << 'EVENTRATE'
+apiVersion: apiserver.config.k8s.io/v1
+kind: AdmissionConfiguration
+plugins:
+  - name: EventRateLimit
+    configuration:
+      apiVersion: eventratelimit.admission.k8s.io/v1alpha1
+      kind: Configuration
+      limits:
+        - type: Server
+          qps: 5000
+          burst: 20000
+EVENTRATE
+chmod 600 /etc/rancher/rke2/admission-control-config.yaml
+
 # CIS Benchmark Fix (SDE-284): Datei-Permissions für 1.1.1, 1.1.3, 1.1.5
 # RKE2 legt diese Dateien mit 644 an — CIS erwartet 600
 # Fix via systemd ExecStartPost oder Post-Start-Skript

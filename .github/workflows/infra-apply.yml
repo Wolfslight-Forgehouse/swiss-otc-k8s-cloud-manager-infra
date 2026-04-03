@@ -705,6 +705,31 @@ jobs:
           kubectl --insecure-skip-tls-verify get pods -n cnpg-system --no-headers | head -5
 
 
+
+      # ── Kyverno Policy Engine (SDE-285) ──────────────
+      - name: Deploy Kyverno (Policy Engine)
+        run: |
+          echo "🛡️  Deploying Kyverno 3.3.4..."
+          helm repo add kyverno https://kyverno.github.io/kyverno 2>/dev/null || true
+          helm repo update kyverno 2>/dev/null || true
+          helm upgrade --install kyverno kyverno/kyverno \
+            --namespace kyverno --create-namespace \
+            --version 3.3.4 \
+            --set admissionController.replicas=1 \
+            --insecure-skip-tls-verify \
+            --wait --timeout 5m
+          kubectl --insecure-skip-tls-verify apply -f deploy/k8s/security/kyverno/cis-policies.yaml
+          echo "✅ Kyverno deployed + CIS Policies aktiv (Audit-Mode)"
+          kubectl --insecure-skip-tls-verify get clusterpolicies 2>/dev/null || true
+
+      # ── NetworkPolicies (SDE-286 CIS 5.3.2) ──────────
+      - name: Apply Default-Deny NetworkPolicies (CIS 5.3.2)
+        run: |
+          echo "🔒 Applying Default-Deny NetworkPolicies..."
+          kubectl --insecure-skip-tls-verify apply -f deploy/k8s/security/networkpolicies/
+          echo "✅ NetworkPolicies applied"
+          kubectl --insecure-skip-tls-verify get networkpolicy -A 2>/dev/null || true
+
       # ── CIS Benchmark Scanner (SDE-284) ──────────────
       - name: Run CIS Benchmark (kube-bench)
         run: |

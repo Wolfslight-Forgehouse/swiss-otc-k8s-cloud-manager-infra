@@ -1,0 +1,134 @@
+# CIS 5.2.2 — Minimize admission of privileged containers
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: disallow-privileged-containers
+  annotations:
+    policies.kyverno.io/title: Disallow Privileged Containers
+    policies.kyverno.io/category: CIS 5.2.2
+    policies.kyverno.io/severity: high
+spec:
+  validationFailureAction: Audit
+  background: true
+  rules:
+    - name: no-privileged
+      match:
+        any:
+        - resources:
+            kinds: [Pod]
+            namespaces:
+              - default
+              - monitoring
+              - argocd
+              - cnpg-system
+      validate:
+        message: "Privileged containers sind nicht erlaubt (CIS 5.2.2)"
+        pattern:
+          spec:
+            containers:
+              - =(securityContext):
+                  =(privileged): "false"
+---
+# CIS 5.2.3 — Minimize admission of containers with hostPID
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: disallow-host-pid
+  annotations:
+    policies.kyverno.io/title: Disallow hostPID
+    policies.kyverno.io/category: CIS 5.2.3
+    policies.kyverno.io/severity: high
+spec:
+  validationFailureAction: Audit
+  background: true
+  rules:
+    - name: no-host-pid
+      match:
+        any:
+        - resources:
+            kinds: [Pod]
+            namespaces: [default, monitoring, argocd, cnpg-system]
+      validate:
+        message: "hostPID ist nicht erlaubt (CIS 5.2.3)"
+        pattern:
+          spec:
+            =(hostPID): "false"
+---
+# CIS 5.2.5 — Minimize admission of containers with hostNetwork
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: disallow-host-network
+  annotations:
+    policies.kyverno.io/title: Disallow hostNetwork
+    policies.kyverno.io/category: CIS 5.2.5
+    policies.kyverno.io/severity: high
+spec:
+  validationFailureAction: Audit
+  background: true
+  rules:
+    - name: no-host-network
+      match:
+        any:
+        - resources:
+            kinds: [Pod]
+            namespaces: [default, monitoring, argocd, cnpg-system]
+      validate:
+        message: "hostNetwork ist nicht erlaubt (CIS 5.2.5)"
+        pattern:
+          spec:
+            =(hostNetwork): "false"
+---
+# CIS 5.2.6 — Minimize allowPrivilegeEscalation
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: disallow-privilege-escalation
+  annotations:
+    policies.kyverno.io/title: Disallow Privilege Escalation
+    policies.kyverno.io/category: CIS 5.2.6
+    policies.kyverno.io/severity: high
+spec:
+  validationFailureAction: Audit
+  background: true
+  rules:
+    - name: no-privilege-escalation
+      match:
+        any:
+        - resources:
+            kinds: [Pod]
+            namespaces: [default, monitoring, argocd, cnpg-system]
+      validate:
+        message: "allowPrivilegeEscalation=false erforderlich (CIS 5.2.6)"
+        pattern:
+          spec:
+            containers:
+              - securityContext:
+                  allowPrivilegeEscalation: "false"
+---
+# CIS 5.7.2 — seccomp profile
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: require-seccomp-profile
+  annotations:
+    policies.kyverno.io/title: Require seccomp Profile
+    policies.kyverno.io/category: CIS 5.7.2
+    policies.kyverno.io/severity: medium
+spec:
+  validationFailureAction: Audit
+  background: true
+  rules:
+    - name: check-seccomp
+      match:
+        any:
+        - resources:
+            kinds: [Pod]
+            namespaces: [default]
+      validate:
+        message: "seccomp profile erforderlich (CIS 5.7.2)"
+        pattern:
+          spec:
+            securityContext:
+              seccompProfile:
+                type: "RuntimeDefault | Localhost"
