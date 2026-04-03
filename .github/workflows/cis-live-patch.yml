@@ -72,9 +72,9 @@ jobs:
             ubuntu@${BASTION_IP}
           sed -i "s/${MASTER_IP}/127.0.0.1/g" /tmp/kubeconfig
           sleep 5
-          echo "KUBECONFIG=/tmp/kubeconfig"  >> $GITHUB_ENV
-          echo "BASTION_IP=${BASTION_IP}"    >> $GITHUB_ENV
-          echo "MASTER_IP=${MASTER_IP}"      >> $GITHUB_ENV
+          echo "KUBECONFIG=/tmp/kubeconfig" >> $GITHUB_ENV
+          echo "BASTION_IP=${BASTION_IP}"   >> $GITHUB_ENV
+          echo "MASTER_IP=${MASTER_IP}"     >> $GITHUB_ENV
 
       - name: Fix 1 — chmod 600 (CIS 1.1.1/3/5/9/10/20)
         env:
@@ -83,24 +83,16 @@ jobs:
         run: |
           echo "🔧 Fix CIS 1.1.1/3/5/9/10/20 — chmod 600..."
           ssh -o StrictHostKeyChecking=no \
-            -J ubuntu@${BASTION_IP} ubuntu@${MASTER_IP} << 'SSHEOF'
-            sudo bash -c '
-              chmod 600 /etc/rancher/rke2/*.yaml 2>/dev/null || true
-              chmod 600 /etc/rancher/rke2/*.conf 2>/dev/null || true
-              find /var/lib/rancher/rke2/server/manifests/ -name "*.yaml" \
-                -exec chmod 600 {} \; 2>/dev/null || true
-              find /var/lib/rancher/rke2/server/tls/ \( -name "*.crt" -o -name "*.key" \) \
-                -exec chmod 600 {} \; 2>/dev/null || true
-              find /var/lib/rancher/rke2/agent/etc/cni/ -type f \
-                -exec chmod 600 {} \; \
-                -exec chown root:root {} \; 2>/dev/null || true
-              echo "chmod 600 done:"
-              ls -la /etc/rancher/rke2/*.yaml 2>/dev/null | awk "{print \$1, \$9}"
-            '
-SSHEOF
+            -J ubuntu@${BASTION_IP} ubuntu@${MASTER_IP} \
+            "sudo bash -c 'chmod 600 /etc/rancher/rke2/*.yaml /etc/rancher/rke2/*.conf 2>/dev/null; \
+              find /var/lib/rancher/rke2/server/manifests/ -name \"*.yaml\" -exec chmod 600 {} \; 2>/dev/null; \
+              find /var/lib/rancher/rke2/server/tls/ -name \"*.crt\" -exec chmod 600 {} \; 2>/dev/null; \
+              find /var/lib/rancher/rke2/server/tls/ -name \"*.key\" -exec chmod 600 {} \; 2>/dev/null; \
+              find /var/lib/rancher/rke2/agent/etc/cni/ -type f -exec chmod 600 {} \; 2>/dev/null; \
+              echo CHMOD_DONE'"
           echo "✅ Datei-Permissions gesetzt"
 
-      - name: Fix 2 — Kyverno 3.3.4 deployen (CIS 5.2.*)
+      - name: Fix 2 — Kyverno 3.3.4 (CIS 5.2.*)
         run: |
           echo "🛡️  Deploy Kyverno 3.3.4..."
           helm repo add kyverno https://kyverno.github.io/kyverno 2>/dev/null || true
@@ -125,9 +117,9 @@ SSHEOF
           echo "✅ NetworkPolicies applied"
           kubectl --insecure-skip-tls-verify get networkpolicy -A
 
-      - name: CIS Scan — Score nach Patch
+      - name: CIS Re-Scan nach Patch
         run: |
-          echo "🔒 CIS Re-Scan nach Patch..."
+          echo "🔒 CIS Re-Scan..."
           kubectl --insecure-skip-tls-verify delete job kube-bench-cis \
             -n kube-system 2>/dev/null || true
           sleep 3
@@ -135,23 +127,16 @@ SSHEOF
             -f deploy/k8s/security/kube-bench-job.yaml
           kubectl --insecure-skip-tls-verify wait job/kube-bench-cis \
             -n kube-system --for=condition=complete --timeout=5m
-
           BENCH_POD=$(kubectl --insecure-skip-tls-verify get pods -n kube-system \
             -l app=kube-bench -o jsonpath='{.items[0].metadata.name}')
-
           echo ""
-          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
           echo "📋 CIS Results nach Live-Patch:"
-          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
           kubectl --insecure-skip-tls-verify logs "$BENCH_POD" -n kube-system | \
             grep -E "^\[PASS\]|^\[FAIL\]|^\[WARN\]|^==" | head -60 || true
-          echo ""
-          echo "📊 Score:"
           PASS=$(kubectl --insecure-skip-tls-verify logs "$BENCH_POD" -n kube-system | grep -c "^\[PASS\]" || echo 0)
           FAIL=$(kubectl --insecure-skip-tls-verify logs "$BENCH_POD" -n kube-system | grep -c "^\[FAIL\]" || echo 0)
           WARN=$(kubectl --insecure-skip-tls-verify logs "$BENCH_POD" -n kube-system | grep -c "^\[WARN\]" || echo 0)
           echo "✅ PASS: $PASS | ❌ FAIL: $FAIL | ⚠️  WARN: $WARN"
-
           {
             echo "## 🔒 CIS Score nach Live-Patch"
             echo "| | Vorher | Nachher |"
