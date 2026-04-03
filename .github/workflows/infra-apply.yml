@@ -329,6 +329,13 @@ jobs:
           kubectl --insecure-skip-tls-verify label node "$MASTER_HOSTNAME" \
             kube-ovn/role=master --overwrite || true
 
+          # RKE2-spezifische Pfade:
+          # - kubelet-dir: /var/lib/rancher/rke2/agent/kubelet (nicht /var/lib/kubelet)
+          # - CNI bin: /var/lib/rancher/rke2/data/current/bin (RKE2 embedded)
+          # - CNI conf: /var/lib/rancher/rke2/agent/etc/cni/net.d
+          # Diese sind kritisch damit kube-ovn-cni Ready wird!
+          RKE2_DATA=$(ls -d /var/lib/rancher/rke2/data/v*/bin 2>/dev/null | head -1 || echo "/var/lib/rancher/rke2/data/current/bin")
+          
           helm upgrade --install kube-ovn kubeovn/kube-ovn \
             --namespace kube-system \
             --version 1.13.0 \
@@ -346,6 +353,9 @@ jobs:
             --set "ovn-central.requests.memory=100Mi" \
             --set "ovn-central.limits.cpu=1" \
             --set "ovn-central.limits.memory=1Gi" \
+            --set "kubelet_conf.KUBELET_DIR=/var/lib/rancher/rke2/agent/kubelet" \
+            --set "cni_conf.CNI_CONF_DIR=/var/lib/rancher/rke2/agent/etc/cni/net.d" \
+            --set "cni_conf.CNI_BIN_DIR=/opt/cni/bin" \
             --insecure-skip-tls-verify
 
           # Bootstrap Fix: ovn-central CPU patch + CNI Pod Neustart
