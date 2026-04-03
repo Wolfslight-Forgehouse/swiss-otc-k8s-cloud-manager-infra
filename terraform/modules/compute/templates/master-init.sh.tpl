@@ -134,4 +134,25 @@ systemctl daemon-reload
 systemctl enable rke2-server.service
 systemctl start rke2-server.service
 
+
+# CIS Benchmark Fix (SDE-284): Datei-Permissions für 1.1.1, 1.1.3, 1.1.5
+# RKE2 legt diese Dateien mit 644 an — CIS erwartet 600
+# Fix via systemd ExecStartPost oder Post-Start-Skript
+cat > /etc/systemd/system/rke2-cis-fix.service << 'CISFIX'
+[Unit]
+Description=CIS Benchmark Permission Fix for RKE2
+After=rke2-server.service
+Requires=rke2-server.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/bin/bash -c 'sleep 30 &&   chmod 600 /etc/rancher/rke2/rke2.yaml 2>/dev/null || true &&   find /var/lib/rancher/rke2/server/manifests/ -name "*.yaml" -exec chmod 600 {} \; 2>/dev/null || true &&   find /etc/rancher/rke2/ -name "*.yaml" -exec chmod 600 {} \; 2>/dev/null || true &&   find /etc/rancher/rke2/ -name "*.conf" -exec chmod 600 {} \; 2>/dev/null || true'
+
+[Install]
+WantedBy=multi-user.target
+CISFIX
+
+systemctl enable rke2-cis-fix.service
+
 echo "RKE2 master setup complete (CNI: ${cni_plugin})"
