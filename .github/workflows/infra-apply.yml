@@ -368,17 +368,24 @@ jobs:
             sleep 10
           done
 
-          # Nodes sollten jetzt Ready werden
-          echo "⏳ Warte auf Node Ready..."
-          for i in $(seq 1 20); do
-            READY=$(kubectl --insecure-skip-tls-verify get nodes --no-headers 2>/dev/null | \
+          # Warte bis kube-ovn-cni DaemonSet READY ist (nicht nur Running!)
+          # kube-ovn-cni 0/1 = kein CNI = alle weiteren Pods ContainerCreating
+          echo "⏳ Warte auf kube-ovn-cni Ready + Nodes Ready..."
+          for i in $(seq 1 40); do
+            CNI_DESIRED=$(kubectl --insecure-skip-tls-verify get ds kube-ovn-cni -n kube-system \
+              -o jsonpath='{.status.desiredNumberScheduled}' 2>/dev/null || echo "0")
+            CNI_READY=$(kubectl --insecure-skip-tls-verify get ds kube-ovn-cni -n kube-system \
+              -o jsonpath='{.status.numberReady}' 2>/dev/null || echo "0")
+            NODE_READY=$(kubectl --insecure-skip-tls-verify get nodes --no-headers 2>/dev/null | \
               grep -c " Ready " || echo "0")
-            echo "  [$i/20] Ready nodes: ${READY}"
-            [ "${READY:-0}" -ge 1 ] && break
-            sleep 15
+            echo "  [$i/40] kube-ovn-cni: ${CNI_READY}/${CNI_DESIRED} Ready | Nodes: ${NODE_READY}"
+            [ "${CNI_READY:-0}" -ge "${CNI_DESIRED:-99}" ] && \
+            [ "${CNI_DESIRED:-0}" -ge 1 ] && \
+            [ "${NODE_READY:-0}" -ge 3 ] && break
+            sleep 10
           done
 
-          echo "✅ Kube-OVN deployed"
+          echo "✅ Kube-OVN deployed + CNI Ready"
           kubectl --insecure-skip-tls-verify get pods -n kube-system | grep -E "kube-ovn|ovn"
 
       # ── Deploy Cinder CSI (EVS Storage) ─────────────────
