@@ -7,7 +7,7 @@ metadata:
     app: kube-bench
     component: cis-scanner
 spec:
-  ttlSecondsAfterFinished: 3600
+  ttlSecondsAfterFinished: 86400
   template:
     metadata:
       labels:
@@ -34,7 +34,7 @@ spec:
             - master,etcd,policies
             - --benchmark
             - rke2-cis-1.7
-            - --json
+          # kein --json → Text-Output für grep PASS/FAIL/WARN
           volumeMounts:
             - name: var-lib-rancher
               mountPath: /var/lib/rancher
@@ -51,11 +51,6 @@ spec:
             - name: etc-kubernetes
               mountPath: /etc/kubernetes
               readOnly: true
-          env:
-            - name: NODE_NAME
-              valueFrom:
-                fieldRef:
-                  fieldPath: spec.nodeName
       volumes:
         - name: var-lib-rancher
           hostPath:

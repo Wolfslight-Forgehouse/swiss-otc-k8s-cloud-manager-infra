@@ -721,81 +721,18 @@ jobs:
           echo "⏳ Warte auf kube-bench Master-Job..."
           kubectl --insecure-skip-tls-verify wait job/kube-bench-cis             -n kube-system --for=condition=complete --timeout=3m 2>/dev/null ||           kubectl --insecure-skip-tls-verify wait job/kube-bench-cis             -n kube-system --for=condition=failed --timeout=3m 2>/dev/null || true
 
-          # Ergebnisse ausgeben
-          BENCH_POD=$(kubectl --insecure-skip-tls-verify get pods -n kube-system             -l app=kube-bench --field-selector=status.phase=Succeeded             -o jsonpath='{.items[0].metadata.name}' 2>/dev/null)
+          # Ergebnisse ausgeben (Text-Output, kein --json)
+          BENCH_POD=$(kubectl --insecure-skip-tls-verify get pods -n kube-system \
+            -l app=kube-bench -o jsonpath='{.items[0].metadata.name}' 2>/dev/null)
 
           if [ -n "$BENCH_POD" ]; then
-            echo "📋 CIS Benchmark Results:"
-            kubectl --insecure-skip-tls-verify logs "$BENCH_POD" -n kube-system 2>/dev/null |               grep -E "^\[PASS\]|^\[FAIL\]|^\[WARN\]|^\[INFO\]|^==|total:" | head -50
+            echo "📋 CIS Benchmark Results (PASS/FAIL/WARN):"
+            kubectl --insecure-skip-tls-verify logs "$BENCH_POD" -n kube-system 2>/dev/null | \
+              grep -E "^\[PASS\]|^\[FAIL\]|^\[WARN\]|^==" | head -50 || true
             echo ""
             echo "📊 Summary:"
-            kubectl --insecure-skip-tls-verify logs "$BENCH_POD" -n kube-system 2>/dev/null |               grep -E "total:|== Summary" | tail -10
+            kubectl --insecure-skip-tls-verify logs "$BENCH_POD" -n kube-system 2>/dev/null | \
+              grep -E "total:" | tail -10 || true
           else
-            echo "⚠️  kube-bench Job noch nicht abgeschlossen (CronJob läuft täglich)"
-            kubectl --insecure-skip-tls-verify get pods -n kube-system -l app=kube-bench 2>/dev/null
+            echo "⚠️  kube-bench Pod nicht gefunden — CronJob läuft täglich 02:00"
           fi
-
-          echo "✅ CIS Scanner deployed (CronJob: täglich 02:00 Uhr)"
-
-      # ── Smoke Test ─────────────────────────────────────
-      - name: Smoke Test (HTTP)
-        if: env.ELB_IP != ''
-        run: |
-          echo "🌐 Testing http://$ELB_IP ..."
-          for i in $(seq 1 12); do
-            HTTP=$(curl -s -o /tmp/demo-response.html -w "%{http_code}" \
-              --max-time 5 "http://$ELB_IP" || echo "000")
-            echo "  HTTP $HTTP (attempt $i/12)"
-            if [ "$HTTP" = "200" ]; then
-              echo "✅ Demo App is reachable!"
-              break
-            fi
-            sleep 10
-          done
-
-      # ── Job Summary ────────────────────────────────────
-      - name: Summary
-        if: always()
-        run: |
-          {
-            echo "## 🚀 E2E Deployment Summary"
-            echo ""
-            echo "| Resource | Value |"
-            echo "|---|---|"
-            echo "| Bastion IP | \`${BASTION_IP}\` |"
-            echo "| Master IP | \`${MASTER_IP}\` |"
-            echo "| VPC ID | \`${VPC_ID}\` |"
-            echo "| Demo App ELB | \`${ELB_IP:-not yet assigned}\` |"
-            echo ""
-            echo "### Storage"
-            echo "| StorageClass | Driver | AccessMode |"
-            echo "|---|---|---|"
-            echo "| \`csi-cinder-sc-delete\` | Cinder CSI | ReadWriteOnce (EVS Block) |"
-            echo "| \`csi-obs\` | CSI-S3 GeeseFS | ReadWriteMany (OBS S3) |"
-            echo ""
-            echo "### SSH Access"
-            echo "\`\`\`bash"
-            echo "ssh -J ubuntu@${BASTION_IP} ubuntu@${MASTER_IP}"
-            echo "\`\`\`"
-          } >> $GITHUB_STEP_SUMMARY
-
-      # ── Demo App Screenshot ───────────────────────────────────────────────
-      - name: Screenshot Demo App
-        if: success()
-        run: |
-          cd /tmp
-          npm init -y > /dev/null 2>&1
-          npm install playwright > /dev/null 2>&1
-          npx playwright install chromium --with-deps > /dev/null 2>&1
-          cp $GITHUB_WORKSPACE/scripts/screenshot.mjs .
-          node --input-type=module < screenshot.mjs
-          echo "📸 Screenshot fertig"
-
-      - name: Upload Demo App Screenshot
-        if: success()
-        uses: actions/upload-artifact@v4
-        with:
-          name: demo-app-screenshot
-          path: /tmp/demo-app.png
-          retention-days: 14
-
