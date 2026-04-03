@@ -561,40 +561,29 @@ jobs:
             echo "⚠️ SHARED_ELB_ID leer — shared-elb Modul noch nicht deployed"
           fi
 
-          # ── ingress-nginx deployen (wenn DEPLOY_INGRESS=true) ──
+          # ── Traefik Ingress Controller deployen (wenn DEPLOY_INGRESS=true) ──
           if [ "${DEPLOY_INGRESS:-true}" = "true" ]; then
-          echo "🔧 Deploy ingress-nginx..."
-          helm repo add ingress-nginx https://kubernetes.github.io/ingress-nginx 2>/dev/null || true
-          helm repo update ingress-nginx 2>/dev/null || true
+          echo "🔧 Deploy Traefik 33.2.1..."
+          helm repo add traefik https://traefik.github.io/charts 2>/dev/null || true
+          helm repo update traefik 2>/dev/null || true
 
-          # nginx-internal — immer deployen
-          echo "  Installing nginx-internal..."
-          INTERNAL_VALUES=$(sed "s/\${SUBNET_ID}/${SUBNET_ID}/g" deploy/k8s/ingress/nginx-internal-values.yaml)
-          helm upgrade --install nginx-internal ingress-nginx/ingress-nginx \
-            --namespace ingress-nginx --create-namespace \
-            --kubeconfig /tmp/rke2.yaml --insecure-skip-tls-verify \
-            -f <(echo "$INTERNAL_VALUES") \
-            --timeout 5m --wait=false
-          echo "  ✅ nginx-internal installed (IngressClass: nginx-internal)"
+          helm upgrade --install traefik traefik/traefik \
+            --namespace traefik --create-namespace \
+            --version 33.2.1 \
+            --set ingressClass.enabled=true \
+            --set ingressClass.isDefaultClass=true \
+            --set service.type=LoadBalancer \
+            --set providers.kubernetesIngress.enabled=true \
+            --set providers.kubernetesCRD.enabled=true \
+            --set logs.access.enabled=true \
+            --insecure-skip-tls-verify \
+            --wait --timeout 5m
 
-          # nginx-public — nur wenn CCM_ELB_EIP = true
-          if [ "${CCM_ELB_EIP}" = "true" ]; then
-            echo "  Installing nginx-public (CCM_ELB_EIP=true)..."
-            PUBLIC_VALUES=$(sed "s/\${SUBNET_ID}/${SUBNET_ID}/g" deploy/k8s/ingress/nginx-public-values.yaml)
-            helm upgrade --install nginx-public ingress-nginx/ingress-nginx \
-              --namespace ingress-nginx --create-namespace \
-              --kubeconfig /tmp/rke2.yaml --insecure-skip-tls-verify \
-              -f <(echo "$PUBLIC_VALUES") \
-              --timeout 5m --wait=false
-            echo "  ✅ nginx-public installed (IngressClass: nginx-public, EIP=true)"
-          else
-            echo "  ⏭️  nginx-public skipped (CCM_ELB_EIP=false)"
-          fi
-
-          # Status
+          echo "✅ Traefik deployed"
+          kubectl --insecure-skip-tls-verify get pods -n traefik --no-headers | head -5
           kubectl --insecure-skip-tls-verify get ingressclass 2>/dev/null || true
           else
-            echo "⏭️  ingress-nginx deploy skipped (DEPLOY_INGRESS=false)"
+            echo "⏭️  Traefik deploy skipped (DEPLOY_INGRESS=false)"
           fi
 
           # Storage Demo: EVS PVC (Block) + OBS PVC (Object/S3)
@@ -635,6 +624,85 @@ jobs:
             echo "  Attempt $i/36 — waiting 10s..."
             sleep 10
           done
+
+
+      
+      # ── Cert-Manager (SDE-279) ────────────────────────
+      - name: Deploy Cert-Manager (TLS)
+        run: |
+          echo "🔒 Deploying cert-manager v1.16.0..."
+          helm repo add jetstack https://charts.jetstack.io 2>/dev/null || true
+          helm repo update jetstack 2>/dev/null || true
+          helm upgrade --install cert-manager jetstack/cert-manager \
+            --namespace cert-manager --create-namespace \
+            --version v1.16.0 \
+            --set installCRDs=true \
+            --insecure-skip-tls-verify \
+            --wait --timeout 5m
+          kubectl --insecure-skip-tls-verify apply -f deploy/k8s/cert-manager/cluster-issuers.yaml
+          echo "✅ Cert-Manager deployed"
+          kubectl --insecure-skip-tls-verify get clusterissuers 2>/dev/null || true
+
+      # ── ArgoCD (SDE-278) ──────────────────────────────
+      - name: Deploy ArgoCD (GitOps)
+        run: |
+          echo "🔄 Deploying ArgoCD 7.7.0..."
+          helm repo add argo https://argoproj.github.io/argo-helm 2>/dev/null || true
+          helm repo update argo 2>/dev/null || true
+          helm upgrade --install argocd argo/argo-cd \
+            --namespace argocd --create-namespace \
+            --version 7.7.0 \
+            --set server.insecure=true \
+            --insecure-skip-tls-verify \
+            --wait --timeout 8m
+          kubectl --insecure-skip-tls-verify apply -f deploy/k8s/argocd/ingress.yaml
+          ARGOCD_PWD=$(kubectl --insecure-skip-tls-verify get secret argocd-initial-admin-secret \
+            -n argocd -o jsonpath='{.data.password}' 2>/dev/null | base64 -d || echo "pending")
+          echo "✅ ArgoCD deployed (admin pw: ${ARGOCD_PWD})"
+          kubectl --insecure-skip-tls-verify get pods -n argocd --no-headers | head -8
+
+          # GitOps: AppProjects + App-of-Apps bootstrappen
+          echo "🔄 Bootstrapping GitOps (App-of-Apps)..."
+          kubectl --insecure-skip-tls-verify apply -f argocd/projects/infrastructure.yaml
+          kubectl --insecure-skip-tls-verify apply -f argocd/projects/workloads.yaml
+          kubectl --insecure-skip-tls-verify apply -f argocd/apps/root.yaml
+          kubectl --insecure-skip-tls-verify apply -f argocd/appsets/workloads-appset.yaml
+          echo "✅ GitOps bootstrapped — App-of-Apps aktiv"
+          kubectl --insecure-skip-tls-verify get applications -n argocd 2>/dev/null || true
+
+      # ── kube-prometheus-stack (SDE-281) ───────────────
+      - name: Deploy kube-prometheus-stack (Monitoring)
+        run: |
+          echo "📊 Deploying kube-prometheus-stack 67.0.0..."
+          helm repo add prometheus-community https://prometheus-community.github.io/helm-charts 2>/dev/null || true
+          helm repo update prometheus-community 2>/dev/null || true
+          helm upgrade --install kube-prometheus-stack prometheus-community/kube-prometheus-stack \
+            --namespace monitoring --create-namespace \
+            --version 67.0.0 \
+            --set grafana.adminPassword=admin \
+            --set grafana.ingress.enabled=true \
+            --set grafana.ingress.ingressClassName=traefik \
+            --set grafana.ingress.hosts='{grafana.local}' \
+            --set prometheus.prometheusSpec.retention=7d \
+            --insecure-skip-tls-verify \
+            --wait --timeout 10m
+          echo "✅ kube-prometheus-stack deployed"
+          kubectl --insecure-skip-tls-verify get pods -n monitoring --no-headers | head -8
+
+      # ── CloudNativePG (SDE-280) ───────────────────────
+      - name: Deploy CloudNativePG (PostgreSQL Operator)
+        run: |
+          echo "🐘 Deploying CloudNativePG 0.23.0..."
+          helm repo add cnpg https://cloudnative-pg.github.io/charts 2>/dev/null || true
+          helm repo update cnpg 2>/dev/null || true
+          helm upgrade --install cnpg cnpg/cloudnative-pg \
+            --namespace cnpg-system --create-namespace \
+            --version 0.23.0 \
+            --insecure-skip-tls-verify \
+            --wait --timeout 5m
+          kubectl --insecure-skip-tls-verify apply -f deploy/k8s/postgres/demo-cluster.yaml
+          echo "✅ CloudNativePG deployed"
+          kubectl --insecure-skip-tls-verify get pods -n cnpg-system --no-headers | head -5
 
       # ── Smoke Test ─────────────────────────────────────
       - name: Smoke Test (HTTP)
