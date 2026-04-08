@@ -24,3 +24,32 @@ kyverno:
   # CRDs management
   crds:
     install: true
+
+# Policy category toggles
+# Each category can be enabled/disabled independently.
+# validationFailureAction can be overridden per category (Audit or Enforce).
+policies:
+  baseline:
+    enabled: true
+    validationFailureAction: Audit
+
+  restricted:
+    enabled: true
+    validationFailureAction: Audit
+
+  bestPractices:
+    enabled: true
+    validationFailureAction: Audit
+
+  custom:
+    enabled: true
+    validationFailureAction: Audit
+
+# Namespace exclusions applied to all policy categories
+namespaceExclusions:
+  - kube-system
+  - kube-public
+  - kube-node-lease
+  - kyverno
+  - cattle-system
+  - calico-system
