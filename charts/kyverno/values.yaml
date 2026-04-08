@@ -1,0 +1,26 @@
+# Default values for kyverno-otc
+# Upstream Kyverno chart values are nested under the 'kyverno' key
+
+kyverno:
+  # Admission controller configuration
+  admissionController:
+    replicas: 3
+
+  # Create the target namespace
+  namespaceOverride: kyverno-system
+
+  # Background controller for policy reports
+  backgroundController:
+    replicas: 2
+
+  # Cleanup controller
+  cleanupController:
+    replicas: 2
+
+  # Reports controller
+  reportsController:
+    replicas: 2
+
+  # CRDs management
+  crds:
+    install: true

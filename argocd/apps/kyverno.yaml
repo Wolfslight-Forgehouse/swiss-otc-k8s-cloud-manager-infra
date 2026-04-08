@@ -4,31 +4,41 @@ metadata:
   name: kyverno
   namespace: argocd
   finalizers:
-    - resources-finalizer.argocd.io
+    - resources-finalizer.argocd.argoproj.io
 spec:
   project: infrastructure
+
   source:
-    repoURL: https://kyverno.github.io/kyverno
     chart: kyverno
-    targetRevision: 3.3.4
+    repoURL: ghcr.io/Wolfslight-Forgehouse/charts/kyverno
+    targetRevision: 0.1.0
     helm:
-      parameters:
-        - name: admissionController.replicas
-          value: "1"
-        - name: backgroundController.enabled
-          value: "true"
-        - name: cleanupController.enabled
-          value: "true"
-        - name: reportsController.enabled
-          value: "true"
+      releaseName: kyverno
+      valueFiles:
+        - values.yaml
+        - values-production.yaml
+
   destination:
     server: https://kubernetes.default.svc
-    namespace: kyverno
+    namespace: kyverno-system
+
   syncPolicy:
     automated:
-      prune: true
       selfHeal: true
+      prune: true
     syncOptions:
       - CreateNamespace=true
       - ServerSideApply=true
-      - Replace=true
+
+  ignoreDifferences:
+    - group: admissionregistration.k8s.io
+      kind: ValidatingWebhookConfiguration
+      jsonPointers:
+        - /webhooks/0/clientConfig/caBundle
+        - /webhooks/1/clientConfig/caBundle
+        - /webhooks/2/clientConfig/caBundle
+    - group: admissionregistration.k8s.io
+      kind: MutatingWebhookConfiguration
+      jsonPointers:
+        - /webhooks/0/clientConfig/caBundle
+        - /webhooks/1/clientConfig/caBundle
