@@ -29,7 +29,7 @@ jobs:
       - name: Install Helm
         uses: azure/setup-helm@v4
         with:
-          version: "v3.16.x"
+          version: "v3.15.4"
 
       - name: Install Kyverno CLI
         run: |
@@ -70,7 +70,7 @@ jobs:
       - name: Install Helm
         uses: azure/setup-helm@v4
         with:
-          version: "v3.16.x"
+          version: "v3.15.4"
 
       - name: Add Kyverno Helm repo
         run: |
