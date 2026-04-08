@@ -1,0 +1,108 @@
+name: DNS / ExternalDNS CI
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "charts/external-dns/**"
+      - "manifests/cert-manager/**"
+      - ".github/workflows/dns-ci.yaml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "charts/external-dns/**"
+      - "manifests/cert-manager/**"
+      - ".github/workflows/dns-ci.yaml"
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  lint-and-test:
+    name: Lint & Template ExternalDNS
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Helm
+        uses: azure/setup-helm@v4
+        with:
+          version: "v3.16.x"
+
+      - name: Add ExternalDNS Helm repo
+        run: |
+          helm repo add external-dns https://kubernetes-sigs.github.io/external-dns/
+          helm repo update
+
+      - name: Build Helm dependencies
+        run: helm dependency build charts/external-dns/
+
+      - name: Helm Lint
+        run: helm lint charts/external-dns/
+
+      - name: Helm Template (default values)
+        run: |
+          helm template external-dns charts/external-dns/ \
+            --namespace external-dns \
+            --create-namespace
+
+      - name: Helm Template (production values)
+        run: |
+          helm template external-dns charts/external-dns/ \
+            --namespace external-dns \
+            --create-namespace \
+            -f charts/external-dns/values-production.yaml
+
+      - name: Validate cert-manager manifests
+        run: |
+          for f in manifests/cert-manager/*.yaml; do
+            echo "Validating $f ..."
+            python3 -c "
+          import yaml, sys
+          with open('$f') as fh:
+              docs = list(yaml.safe_load_all(fh))
+              for doc in docs:
+                  if doc is None:
+                      continue
+                  assert 'apiVersion' in doc, f'Missing apiVersion in {doc}'
+                  assert 'kind' in doc, f'Missing kind in {doc}'
+                  print(f'  OK: {doc[\"kind\"]}/{doc[\"metadata\"][\"name\"]}')
+          "
+          done
+
+  publish:
+    name: Package & Publish to GHCR
+    needs: lint-and-test
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    runs-on: ubuntu-latest
+    env:
+      GHCR_TOKEN: ${{ secrets.GHCR_TOKEN }}
+      GH_ACTOR: ${{ github.actor }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Helm
+        uses: azure/setup-helm@v4
+        with:
+          version: "v3.16.x"
+
+      - name: Add ExternalDNS Helm repo
+        run: |
+          helm repo add external-dns https://kubernetes-sigs.github.io/external-dns/
+          helm repo update
+
+      - name: Build Helm dependencies
+        run: helm dependency build charts/external-dns/
+
+      - name: Login to GHCR
+        run: echo "$GHCR_TOKEN" | helm registry login ghcr.io -u "$GH_ACTOR" --password-stdin
+
+      - name: Package chart
+        run: helm package charts/external-dns/ --destination .helm-packages/
+
+      - name: Push to GHCR OCI
+        run: |
+          helm push .helm-packages/external-dns-otc-*.tgz oci://ghcr.io/Wolfslight-Forgehouse/charts

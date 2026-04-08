@@ -20,3 +20,17 @@ variable "dns_contact_email" {
   type        = string
   default     = "ops@sotc.internal"
 }
+
+# --- ExternalDNS Integration ---
+
+variable "externaldns_managed_domains" {
+  description = "List of domains that ExternalDNS is allowed to manage records for (domainFilters)"
+  type        = list(string)
+  default     = ["sotc.internal"]
+}
+
+variable "externaldns_txt_owner_id" {
+  description = "TXT owner ID for ExternalDNS record ownership tracking"
+  type        = string
+  default     = "rke2-sotc"
+}

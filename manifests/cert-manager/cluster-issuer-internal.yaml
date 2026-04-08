@@ -1,0 +1,45 @@
+# Self-signed CA ClusterIssuer for sotc.internal private zone
+# This does NOT use Let's Encrypt — sotc.internal is a private DNS zone
+# with no public access, so ACME http01/dns01 challenges are not applicable.
+#
+# Architecture:
+#   1. selfsigned-bootstrap: generates the root CA certificate
+#   2. sotc-internal-ca: issues certificates signed by the root CA
+#
+# Usage in Ingress:
+#   annotations:
+#     cert-manager.io/cluster-issuer: sotc-internal-ca
+---
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: selfsigned-bootstrap
+spec:
+  selfSigned: {}
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: sotc-internal-ca
+  namespace: cert-manager
+spec:
+  isCA: true
+  commonName: sotc.internal CA
+  secretName: sotc-internal-ca-tls
+  duration: 87600h # 10 years
+  renewBefore: 8760h # 1 year
+  privateKey:
+    algorithm: ECDSA
+    size: 256
+  issuerRef:
+    name: selfsigned-bootstrap
+    kind: ClusterIssuer
+    group: cert-manager.io
+---
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: sotc-internal-ca
+spec:
+  ca:
+    secretName: sotc-internal-ca-tls
