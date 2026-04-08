@@ -45,7 +45,13 @@ jobs:
         continue-on-error: true
 
       - name: Terraform Init
-        run: terraform init
+        env:
+          TF_BACKEND_BUCKET: ${{ secrets.OBS_TFSTATE_BUCKET }}
+        run: |
+          terraform init \
+            -backend-config="bucket=${TF_BACKEND_BUCKET}" \
+            -backend-config="access_key=${AWS_ACCESS_KEY_ID}" \
+            -backend-config="secret_key=${AWS_SECRET_ACCESS_KEY}"
 
       - name: Terraform Validate
         run: terraform validate
