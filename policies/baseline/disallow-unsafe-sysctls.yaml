@@ -24,6 +24,16 @@ spec:
           - resources:
               kinds:
                 - Pod
+      exclude:
+        any:
+          - resources:
+              namespaces:
+                - kube-system
+                - kube-public
+                - kube-node-lease
+                - kyverno
+                - cattle-system
+                - calico-system
       validate:
         message: >-
           Setting unsafe sysctls is not allowed. Only safe sysctls are permitted:

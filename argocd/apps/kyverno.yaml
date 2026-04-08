@@ -9,14 +9,17 @@ spec:
   project: infrastructure
 
   source:
-    chart: kyverno
+    chart: kyverno-otc
     repoURL: ghcr.io/Wolfslight-Forgehouse/charts/kyverno
     targetRevision: 0.1.0
     helm:
       releaseName: kyverno
-      valueFiles:
-        - values.yaml
-        - values-production.yaml
+      values: |
+        # Inline values — valueFiles do not work with OCI chart sources.
+        # Add production overrides here.
+        replicaCount: 3
+        admissionController:
+          replicas: 3
 
   destination:
     server: https://kubernetes.default.svc

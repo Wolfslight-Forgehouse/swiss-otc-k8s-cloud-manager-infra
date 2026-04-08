@@ -21,6 +21,16 @@ spec:
           - resources:
               kinds:
                 - Pod
+      exclude:
+        any:
+          - resources:
+              namespaces:
+                - kube-system
+                - kube-public
+                - kube-node-lease
+                - kyverno
+                - cattle-system
+                - calico-system
       validate:
         message: "Privileged mode is disallowed. Set securityContext.privileged to false."
         pattern:

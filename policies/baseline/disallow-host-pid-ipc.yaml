@@ -21,6 +21,16 @@ spec:
           - resources:
               kinds:
                 - Pod
+      exclude:
+        any:
+          - resources:
+              namespaces:
+                - kube-system
+                - kube-public
+                - kube-node-lease
+                - kyverno
+                - cattle-system
+                - calico-system
       validate:
         message: "Sharing the host PID namespace is not allowed. Set spec.hostPID to false."
         pattern:
@@ -32,6 +42,16 @@ spec:
           - resources:
               kinds:
                 - Pod
+      exclude:
+        any:
+          - resources:
+              namespaces:
+                - kube-system
+                - kube-public
+                - kube-node-lease
+                - kyverno
+                - cattle-system
+                - calico-system
       validate:
         message: "Sharing the host IPC namespace is not allowed. Set spec.hostIPC to false."
         pattern:
