@@ -1,4 +1,17 @@
-# Swiss OTC RKE2 Cloud Manager
+# Swiss OTC RKE2 Cloud Manager (Legacy Monorepo)
+
+> **This repository has been split into three dedicated repos (April 2026):**
+>
+> | New Repository | Purpose |
+> |---------------|---------|
+> | **[sotc-cloud-manager](https://github.com/Wolfslight-Forgehouse/sotc-cloud-manager)** | OTC Cloud Controller Manager (Go, Helm, CI/CD) |
+> | **[sotc-infra](https://github.com/Wolfslight-Forgehouse/sotc-infra)** | Terraform infrastructure (3 deployment cases) |
+> | **[sotc-platform](https://github.com/Wolfslight-Forgehouse/sotc-platform)** | Rancher templates, ArgoCD, policies, docs |
+>
+> This repo remains as a reference. New development happens in the split repos.
+> See [ADR-001](docs/ADR-001-REPO-ARCHITECTURE.md) for the rationale.
+
+---
 
 RKE2 Kubernetes Cluster auf der Swiss Open Telekom Cloud (`eu-ch2`) — cloud-native mit automatischem ELB-Management, EVS Block Storage und OBS Object Storage.
 
